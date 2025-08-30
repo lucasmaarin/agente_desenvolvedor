@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <header class="header">
+        <div class="logo">
+            <h1>AI Agent</h1>
+        </div>
+        <nav>
+            <a class="marcado" href="">
+                <img src="{{ url_for('static', filename='img/react.png')}}" alt="">
+            </a>
+        </nav>
+    </header>
+
+    <!-- Painel de créditos fixo -->
+    <div class="credit-panel">
+        <p>Tokens usados nesta sessão: {{ session_tokens or 0 }}</p>
+        <p>Crédito estimado gasto: R$ {{ session_cost or 0 }}</p>
+        <p>Crédito restante aproximado: R$ {{ credit_remaining or "N/A" }}</p>
+    </div>
+
+    <main>
+        <hr>
+        <form action="{{ url_for('chat') }}" method="post" enctype="multipart/form-data">
+
+            <label for="user_input">Ou digite seu código JSX/React:</label>
+            <textarea name="user_input" id="user_input" rows="5" cols="80" placeholder="Escreva seu código JSX/React..."
+                required>{{ user_input or '' }}</textarea><br>
+
+            <button type="submit">Enviar ao Chatbot</button>
+        </form>
+
+        {% if result %}
+        <div class="resultado">
+            <h3>Resultado:</h3>
+            <pre>{{ result }}</pre>
+        </div>
+        {% endif %}
+    </main>
+</body>
+
+
+</html>
