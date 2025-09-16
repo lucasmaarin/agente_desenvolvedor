@@ -2,50 +2,185 @@
 <html lang="pt-br">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Agent</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agent</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+  <!-- Prism.js CSS (tema escuro estilo VS Code) -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+
+  <!-- Prism.js Core -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <!-- Linguagens específicas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-jsx.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-tsx.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+
+  <style>
+    /* Aparência parecida com VS Code */
+    pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      position: relative;
+    }
+
+    code {
+      font-family: "Fira Code", monospace;
+      font-size: 14px;
+    }
+
+    /* Loader */
+    #loader {
+      display: none;
+      margin-top: 15px;
+      font-size: 14px;
+      color: #888;
+    }
+
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.2);
+      border-top: 4px solid #61dafb;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Botão copiar */
+    .copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: #61dafb;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      color: #000;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: #21a1f1;
+    }
+  </style>
 </head>
 
 <body>
-    <header class="header">
-        <div class="logo">
-            <h1>AI Agent</h1>
-        </div>
-        <nav>
-            <a class="marcado" href="">
-                <img src="{{ url_for('static', filename='img/react.png')}}" alt="">
-            </a>
-        </nav>
-    </header>
-
-    <!-- Painel de créditos fixo -->
-    <div class="credit-panel">
-        <p>Tokens usados nesta sessão: {{ session_tokens or 0 }}</p>
-        <p>Crédito estimado gasto: R$ {{ session_cost or 0 }}</p>
-        <p>Crédito restante aproximado: R$ {{ credit_remaining or "N/A" }}</p>
+  <header class="header">
+    <div class="logo">
+      <h1>AI Agent</h1>
     </div>
+    <nav>
+      <a class="marcado" href="">
+        <img src="{{ url_for('static', filename='img/react.png')}}" alt="">
+      </a>
+    </nav>
+  </header>
 
-    <main>
-        <hr>
-        <form action="{{ url_for('chat') }}" method="post" enctype="multipart/form-data">
+  <!-- Painel de créditos fixo -->
+  <div class="credit-panel">
+    <p>Tokens usados nesta sessão: <span id="tokens">{{ session_tokens or 0 }}</span></p>
+    <p>Crédito estimado gasto: R$ <span id="cost">{{ session_cost or 0 }}</span></p>
+    <p>Crédito restante aproximado: R$ <span id="credit">{{ credit_remaining or "N/A" }}</span></p>
+  </div>
 
-            <label for="user_input">Ou digite seu código JSX/React:</label>
-            <textarea name="user_input" id="user_input" rows="5" cols="80" placeholder="Escreva seu código JSX/React..."
-                required>{{ user_input or '' }}</textarea><br>
+  <main>
+    <hr>
+    <form id="chatForm" enctype="multipart/form-data">
+      <label for="user_input">Ou digite seu código JSX/React:</label>
+      <textarea name="user_input" id="user_input" rows="5" cols="80"
+        placeholder="Escreva seu código JSX/React..." required></textarea><br>
 
-            <button type="submit">Enviar ao Chatbot</button>
-        </form>
+      <label for="file">Ou envie um arquivo de código:</label>
+      <input type="file" name="file" id="file" accept=".js,.ts,.tsx,.jsx,.txt"><br><br>
 
-        {% if result %}
-        <div class="resultado">
-            <h3>Resultado:</h3>
-            <pre>{{ result }}</pre>
-        </div>
-        {% endif %}
-    </main>
+      <button type="submit">Enviar ao Chatbot</button>
+    </form>
+
+    <div class="resultado">
+      <h3>Resultado:</h3>
+      <div id="loader"><span class="spinner"></span>Gerando resposta...</div>
+      <div id="output"></div>
+    </div>
+  </main>
+
+  <script>
+    document.getElementById("chatForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+
+      const loader = document.getElementById("loader");
+      const output = document.getElementById("output");
+
+      // Mostra loader e limpa saída anterior
+      loader.style.display = "block";
+      output.innerHTML = "";
+
+      try {
+        const response = await fetch("/chat", {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          output.innerHTML = `<p style="color:red;">${data.error}</p>`;
+        } else {
+          let code = data.result
+            .replace(/```jsx/g, "<pre><button class='copy-btn' onclick='copyCode(this)'>Copiar</button><code class='language-jsx'>")
+            .replace(/```tsx/g, "<pre><button class='copy-btn' onclick='copyCode(this)'>Copiar</button><code class='language-tsx'>")
+            .replace(/```ts/g, "<pre><button class='copy-btn' onclick='copyCode(this)'>Copiar</button><code class='language-typescript'>")
+            .replace(/```js/g, "<pre><button class='copy-btn' onclick='copyCode(this)'>Copiar</button><code class='language-javascript'>")
+            .replace(/```/g, "</code></pre>");
+
+          output.innerHTML = code;
+
+          // Atualiza painel de créditos
+          document.getElementById("tokens").innerText = data.tokens;
+          document.getElementById("cost").innerText = data.cost;
+          document.getElementById("credit").innerText = data.credit_remaining;
+
+          Prism.highlightAll();
+        }
+      } catch (err) {
+        output.innerHTML = `<p style="color:red;">Erro ao conectar com o servidor.</p>`;
+      } finally {
+        // Esconde loader
+        loader.style.display = "none";
+      }
+    });
+
+    // Função para copiar código
+    function copyCode(btn) {
+      const codeBlock = btn.nextElementSibling.innerText;
+      navigator.clipboard.writeText(codeBlock).then(() => {
+        btn.innerText = "Copiado!";
+        setTimeout(() => btn.innerText = "Copiar", 2000);
+      });
+    }
+  </script>
 </body>
-
 
 </html>
