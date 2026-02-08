@@ -27,4 +27,7 @@ Thumbs.db
 # Arquivos de configuração local
 *.env
 
+# Credenciais Firebase
+automacoes-royal-x.json
+
 anotacoes.txt

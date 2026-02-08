@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(curl:*)",
+      "Bash(\"c:\\\\Users\\\\lucas\\\\Desktop\\\\Automação\\\\Automacoes\\\\agente_programacao\\\\venv\\\\Scripts\\\\pip.exe\" install firebase-admin)",
+      "Bash(\"c:\\\\Users\\\\lucas\\\\Desktop\\\\Automação\\\\Automacoes\\\\agente_programacao\\\\venv\\\\Scripts\\\\python.exe\" -m pip install firebase-admin)",
+      "Bash(\"c:\\\\Users\\\\lucas\\\\Desktop\\\\Automação\\\\Automacoes\\\\agente_programacao\\\\venv\\\\Scripts\\\\python.exe\" -m pip install python-dotenv)"
+    ]
+  }
+}

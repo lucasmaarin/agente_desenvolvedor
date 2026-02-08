@@ -4,182 +4,932 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Agent</title>
+  <title>AI Code Agent</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
-  <!-- Prism.js CSS (tema escuro estilo VS Code) -->
+  <!-- Prism.js Dark Theme -->
   <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
 
-  <!-- Prism.js Core -->
+  <!-- Prism.js Core + Languages -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-  <!-- Linguagens específicas -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-jsx.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-tsx.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
-
-  <style>
-    /* Aparência parecida com VS Code */
-    pre {
-      background: #1e1e1e;
-      color: #d4d4d4;
-      padding: 16px;
-      border-radius: 8px;
-      overflow-x: auto;
-      position: relative;
-    }
-
-    code {
-      font-family: "Fira Code", monospace;
-      font-size: 14px;
-    }
-
-    /* Loader */
-    #loader {
-      display: none;
-      margin-top: 15px;
-      font-size: 14px;
-      color: #888;
-    }
-
-    .spinner {
-      border: 4px solid rgba(255, 255, 255, 0.2);
-      border-top: 4px solid #61dafb;
-      border-radius: 50%;
-      width: 20px;
-      height: 20px;
-      animation: spin 1s linear infinite;
-      display: inline-block;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-
-    @keyframes spin {
-      0% {
-        transform: rotate(0deg);
-      }
-
-      100% {
-        transform: rotate(360deg);
-      }
-    }
-
-    /* Botão copiar */
-    .copy-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      background: #61dafb;
-      border: none;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      cursor: pointer;
-      color: #000;
-      font-weight: bold;
-      transition: background 0.2s;
-    }
-
-    .copy-btn:hover {
-      background: #21a1f1;
-    }
-  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
 </head>
 
 <body>
-  <header class="header">
-    <div class="logo">
-      <h1>AI Agent</h1>
+  <!-- =============== TOP BAR =============== -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="copilot-icon">AI</div>
+      <span class="app-title">Code Agent</span>
     </div>
-    <nav>
-      <a class="marcado" href="">
-        <img src="{{ url_for('static', filename='img/react.png')}}" alt="">
-      </a>
-    </nav>
+    <div class="topbar-center">
+      <span id="projectName">Nenhum projeto</span>
+    </div>
+    <div class="topbar-right">
+      <span class="daily-usage" title="Uso de hoje">
+        Hoje: <strong id="dailyTokensDisplay">0</strong> tokens &middot; R$ <strong id="dailyCostDisplay">0.00</strong>
+      </span>
+      <button class="topbar-btn" id="historyBtn" onclick="toggleHistory()">Projetos</button>
+      <button class="topbar-btn" id="newProjectBtn" onclick="newProject()">+ Novo</button>
+    </div>
   </header>
 
-  <!-- Painel de créditos fixo -->
-  <div class="credit-panel">
-    <p>Tokens usados nesta sessão: <span id="tokens">{{ session_tokens or 0 }}</span></p>
-    <p>Crédito estimado gasto: R$ <span id="cost">{{ session_cost or 0 }}</span></p>
-    <p>Crédito restante aproximado: R$ <span id="credit">{{ credit_remaining or "N/A" }}</span></p>
+  <!-- =============== WORKSPACE =============== -->
+  <div class="workspace">
+
+    <!-- LEFT PANEL -->
+    <div class="left-panel" id="leftPanel">
+
+      <!-- Chat -->
+      <div class="chat-section">
+        <div class="chat-header">Chat</div>
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-welcome" id="chatWelcome">
+            <div class="welcome-icon">&#9672;</div>
+            <div class="welcome-title">AI Code Agent</div>
+            <div class="welcome-subtitle">Descreva a aplicacao que deseja criar e eu gero o projeto completo para voce.</div>
+            <div class="welcome-suggestions">
+              <div class="welcome-suggestion" onclick="useSuggestion('Dashboard de analytics com graficos e tabela de dados')">
+                <span class="suggestion-icon">&#128202;</span>
+                <span>Dashboard de analytics</span>
+              </div>
+              <div class="welcome-suggestion" onclick="useSuggestion('E-commerce com carrinho de compras, listagem de produtos e checkout')">
+                <span class="suggestion-icon">&#128722;</span>
+                <span>E-commerce com carrinho</span>
+              </div>
+              <div class="welcome-suggestion" onclick="useSuggestion('App de tarefas com categorias, filtros e drag-and-drop')">
+                <span class="suggestion-icon">&#9745;</span>
+                <span>App de tarefas (To-Do)</span>
+              </div>
+              <div class="welcome-suggestion" onclick="useSuggestion('Chat em tempo real com salas, autenticacao e notificacoes')">
+                <span class="suggestion-icon">&#128172;</span>
+                <span>Chat em tempo real</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <div class="chat-input-wrapper">
+            <textarea id="chatInput" placeholder="Descreva a aplicacao que quer criar..." rows="1"
+              onkeydown="handleInputKey(event)" oninput="autoResize(this)"></textarea>
+            <div class="chat-controls">
+              <div class="chat-controls-left">
+                <select id="languageSelect">
+                  <option value="react">React (JS)</option>
+                  <option value="react-ts">React + TS</option>
+                  <option value="python">Python</option>
+                </select>
+                <span class="kbd-hint">
+                  <span class="kbd">Enter</span> enviar
+                </span>
+              </div>
+              <button class="send-btn" id="sendBtn" onclick="handleSend()" title="Enviar (Enter)">
+                &#10148;
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- File Tree -->
+      <div class="file-tree-section" id="fileTreeSection" style="display:none;">
+        <div class="file-tree-header">
+          <span>Explorer</span>
+          <span class="file-count" id="fileCount"></span>
+        </div>
+        <div id="fileTree"></div>
+      </div>
+
+    </div>
+
+    <!-- RESIZE HANDLE -->
+    <div class="resize-handle" id="resizeHandle"></div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+      <div class="tab-bar" id="tabBar"></div>
+      <div class="breadcrumb-bar" id="breadcrumbBar"></div>
+      <div class="code-viewer" id="codeViewer">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">&#128187;</div>
+          <p>Seu codigo aparecera aqui</p>
+          <span class="empty-hint">Descreva uma aplicacao no chat para comecar</span>
+        </div>
+      </div>
+    </div>
+
   </div>
 
-  <main>
-    <hr>
-    <form id="chatForm" enctype="multipart/form-data">
-      <label for="user_input">Ou digite seu código JSX/React:</label>
-      <textarea name="user_input" id="user_input" rows="5" cols="80"
-        placeholder="Escreva seu código JSX/React..." required></textarea><br>
-
-      <label for="file">Ou envie um arquivo de código:</label>
-      <input type="file" name="file" id="file" accept=".js,.ts,.tsx,.jsx,.txt"><br><br>
-
-      <button type="submit">Enviar ao Chatbot</button>
-    </form>
-
-    <div class="resultado">
-      <h3>Resultado:</h3>
-      <div id="loader"><span class="spinner"></span>Gerando resposta...</div>
-      <div id="output"></div>
+  <!-- =============== HISTORY =============== -->
+  <div class="history-overlay" id="historyOverlay" onclick="toggleHistory()"></div>
+  <div class="history-panel" id="historyPanel">
+    <div class="history-header">
+      <span>Projetos Recentes</span>
+      <button class="history-close-btn" onclick="toggleHistory()">&times;</button>
     </div>
-  </main>
+    <div class="history-list" id="historyList"></div>
+  </div>
+
+  <!-- =============== STATUS BAR =============== -->
+  <footer class="statusbar">
+    <div class="statusbar-left">
+      <div class="statusbar-item">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Pronto</span>
+      </div>
+    </div>
+    <div class="statusbar-right">
+      <div class="statusbar-item" id="statusFileInfo"></div>
+      <div class="statusbar-item" id="statusLang"></div>
+    </div>
+  </footer>
+
+  <!-- =============== TOASTS =============== -->
+  <div class="toast-container" id="toastContainer"></div>
 
   <script>
-    document.getElementById("chatForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const formData = new FormData(e.target);
+    // =============== STATE ===============
+    let currentProjectId = localStorage.getItem('projectId') || null;
+    let projectFiles = {};
+    let openTabs = [];
+    let activeTab = null;
+    let isLoading = false;
+    let collapsedFolders = new Set(JSON.parse(localStorage.getItem('collapsedFolders') || '[]'));
 
-      const loader = document.getElementById("loader");
-      const output = document.getElementById("output");
-
-      // Mostra loader e limpa saída anterior
-      loader.style.display = "block";
-      output.innerHTML = "";
-
-      try {
-        const response = await fetch("/chat", {
-          method: "POST",
-          body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.error) {
-          output.innerHTML = `<p style="color:red;">${data.error}</p>`;
-        } else {
-          let code = data.result
-            .replace(/```jsx/g, "<pre><button class='copy-btn' onclick='copyCode(this)'>Copiar</button><code class='language-jsx'>")
-            .replace(/```tsx/g, "<pre><button class='copy-btn' onclick='copyCode(this)'>Copiar</button><code class='language-tsx'>")
-            .replace(/```ts/g, "<pre><button class='copy-btn' onclick='copyCode(this)'>Copiar</button><code class='language-typescript'>")
-            .replace(/```js/g, "<pre><button class='copy-btn' onclick='copyCode(this)'>Copiar</button><code class='language-javascript'>")
-            .replace(/```/g, "</code></pre>");
-
-          output.innerHTML = code;
-
-          // Atualiza painel de créditos
-          document.getElementById("tokens").innerText = data.tokens;
-          document.getElementById("cost").innerText = data.cost;
-          document.getElementById("credit").innerText = data.credit_remaining;
-
-          Prism.highlightAll();
-        }
-      } catch (err) {
-        output.innerHTML = `<p style="color:red;">Erro ao conectar com o servidor.</p>`;
-      } finally {
-        // Esconde loader
-        loader.style.display = "none";
+    // =============== INIT ===============
+    window.addEventListener('DOMContentLoaded', () => {
+      loadDailyUsage();
+      initResize();
+      if (currentProjectId) {
+        loadProject(currentProjectId);
       }
     });
 
-    // Função para copiar código
-    function copyCode(btn) {
-      const codeBlock = btn.nextElementSibling.innerText;
-      navigator.clipboard.writeText(codeBlock).then(() => {
-        btn.innerText = "Copiado!";
-        setTimeout(() => btn.innerText = "Copiar", 2000);
+    // =============== TOASTS ===============
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.animation = 'toastOut 0.2s ease-in forwards';
+        setTimeout(() => toast.remove(), 200);
+      }, 3500);
+    }
+
+    // =============== STATUS BAR ===============
+    function setStatus(text, loading = false) {
+      document.getElementById('statusText').textContent = text;
+      const dot = document.getElementById('statusDot');
+      dot.classList.toggle('loading', loading);
+    }
+
+    function setStatusFile(filePath) {
+      const el = document.getElementById('statusFileInfo');
+      const langEl = document.getElementById('statusLang');
+      if (!filePath) {
+        el.textContent = '';
+        langEl.textContent = '';
+        return;
+      }
+      el.textContent = filePath;
+      const file = projectFiles[filePath];
+      if (file) {
+        langEl.textContent = file.language || '';
+      }
+    }
+
+    // =============== RESIZE PANEL ===============
+    function initResize() {
+      const handle = document.getElementById('resizeHandle');
+      const leftPanel = document.getElementById('leftPanel');
+      let startX, startWidth;
+
+      handle.addEventListener('mousedown', (e) => {
+        startX = e.clientX;
+        startWidth = leftPanel.offsetWidth;
+        handle.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        const onMove = (e) => {
+          const diff = e.clientX - startX;
+          const newWidth = Math.min(Math.max(startWidth + diff, 280), 600);
+          leftPanel.style.width = newWidth + 'px';
+        };
+
+        const onUp = () => {
+          handle.classList.remove('dragging');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
       });
     }
+
+    // =============== AUTO RESIZE TEXTAREA ===============
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+    }
+
+    // =============== SUGGESTIONS ===============
+    function useSuggestion(text) {
+      const input = document.getElementById('chatInput');
+      input.value = text;
+      autoResize(input);
+      input.focus();
+    }
+
+    // =============== CHAT ===============
+    function handleInputKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    }
+
+    async function handleSend() {
+      const input = document.getElementById('chatInput');
+      const message = input.value.trim();
+      if (!message || isLoading) return;
+
+      input.value = '';
+      input.style.height = 'auto';
+      addChatMessage('user', message);
+
+      if (currentProjectId) {
+        await sendChatMessage(message);
+      } else {
+        await createProject(message);
+      }
+    }
+
+    function addChatMessage(role, content) {
+      const container = document.getElementById('chatMessages');
+      const welcome = document.getElementById('chatWelcome');
+      if (welcome) welcome.remove();
+
+      const div = document.createElement('div');
+      div.className = `chat-message ${role}`;
+
+      const label = document.createElement('div');
+      label.className = 'msg-label';
+      label.textContent = role === 'user' ? 'Voce' : 'AI Agent';
+      div.appendChild(label);
+
+      const text = document.createElement('div');
+      text.textContent = content;
+      div.appendChild(text);
+
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function showTypingIndicator() {
+      const container = document.getElementById('chatMessages');
+      const div = document.createElement('div');
+      div.className = 'typing-indicator';
+      div.id = 'typingIndicator';
+      div.innerHTML = '<span></span><span></span><span></span>';
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function hideTypingIndicator() {
+      const el = document.getElementById('typingIndicator');
+      if (el) el.remove();
+    }
+
+    // =============== API CALLS ===============
+    async function createProject(description) {
+      isLoading = true;
+      const btn = document.getElementById('sendBtn');
+      btn.disabled = true;
+      showTypingIndicator();
+      setStatus('Gerando projeto...', true);
+
+      const language = document.getElementById('languageSelect').value;
+
+      try {
+        const res = await fetch('/project/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description, language })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          addChatMessage('assistant', 'Erro: ' + data.error);
+          showToast('Erro ao criar projeto', 'error');
+          return;
+        }
+
+        currentProjectId = data.project_id;
+        localStorage.setItem('projectId', currentProjectId);
+        projectFiles = data.files || {};
+
+        document.getElementById('projectName').textContent = data.project_name;
+        updateDailyUsage(data.daily_tokens, data.daily_cost);
+
+        const numFiles = Object.keys(projectFiles).length;
+        addChatMessage('assistant', `Projeto "${data.project_name}" criado com ${numFiles} arquivos.`);
+        showToast(`Projeto criado com ${numFiles} arquivos`);
+
+        renderFileTree(projectFiles);
+        openFirstFile();
+
+      } catch (err) {
+        addChatMessage('assistant', 'Erro de conexao com o servidor.');
+        showToast('Falha na conexao', 'error');
+      } finally {
+        isLoading = false;
+        btn.disabled = false;
+        hideTypingIndicator();
+        setStatus('Pronto');
+      }
+    }
+
+    async function sendChatMessage(message) {
+      isLoading = true;
+      const btn = document.getElementById('sendBtn');
+      btn.disabled = true;
+      showTypingIndicator();
+      setStatus('Processando...', true);
+
+      try {
+        const res = await fetch(`/project/${currentProjectId}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          addChatMessage('assistant', 'Erro: ' + data.error);
+          showToast('Erro ao processar', 'error');
+          return;
+        }
+
+        projectFiles = data.files || projectFiles;
+        updateDailyUsage(data.daily_tokens, data.daily_cost);
+
+        const updatedCount = Object.keys(data.updated_files || {}).length;
+        const deletedCount = (data.deleted_files || []).length;
+        let msg = `Atualizado ${updatedCount} arquivo(s)`;
+        if (deletedCount > 0) msg += `, removido ${deletedCount}`;
+        msg += '.';
+        addChatMessage('assistant', msg);
+        showToast(msg);
+
+        renderFileTree(projectFiles, Object.keys(data.updated_files || {}));
+
+        if (activeTab && data.updated_files && data.updated_files[activeTab]) {
+          displayFile(activeTab);
+        }
+
+      } catch (err) {
+        addChatMessage('assistant', 'Erro de conexao com o servidor.');
+        showToast('Falha na conexao', 'error');
+      } finally {
+        isLoading = false;
+        btn.disabled = false;
+        hideTypingIndicator();
+        setStatus('Pronto');
+      }
+    }
+
+    async function loadProject(projectId) {
+      setStatus('Carregando projeto...', true);
+      try {
+        const res = await fetch(`/project/${projectId}`);
+        const data = await res.json();
+
+        if (data.error) {
+          localStorage.removeItem('projectId');
+          currentProjectId = null;
+          setStatus('Pronto');
+          return;
+        }
+
+        currentProjectId = projectId;
+        localStorage.setItem('projectId', projectId);
+        projectFiles = data.files || {};
+        openTabs = [];
+        activeTab = null;
+
+        document.getElementById('projectName').textContent = data.project_name;
+        updateDailyUsage(data.daily_tokens, data.daily_cost);
+
+        if (data.language) {
+          document.getElementById('languageSelect').value = data.language;
+        }
+
+        // Restore chat
+        const container = document.getElementById('chatMessages');
+        container.innerHTML = '';
+        (data.conversation || []).forEach(msg => {
+          addChatMessage(msg.role, msg.content);
+        });
+
+        renderFileTree(projectFiles);
+        openFirstFile();
+
+        // Close history
+        document.getElementById('historyPanel').classList.remove('open');
+        document.getElementById('historyOverlay').classList.remove('open');
+        setStatus('Pronto');
+
+      } catch (err) {
+        localStorage.removeItem('projectId');
+        currentProjectId = null;
+        setStatus('Pronto');
+      }
+    }
+
+    function newProject() {
+      currentProjectId = null;
+      localStorage.removeItem('projectId');
+      projectFiles = {};
+      openTabs = [];
+      activeTab = null;
+
+      document.getElementById('projectName').textContent = 'Nenhum projeto';
+      document.getElementById('chatMessages').innerHTML = `
+        <div class="chat-welcome" id="chatWelcome">
+          <div class="welcome-icon">&#9672;</div>
+          <div class="welcome-title">AI Code Agent</div>
+          <div class="welcome-subtitle">Descreva a aplicacao que deseja criar e eu gero o projeto completo para voce.</div>
+          <div class="welcome-suggestions">
+            <div class="welcome-suggestion" onclick="useSuggestion('Dashboard de analytics com graficos e tabela de dados')">
+              <span class="suggestion-icon">&#128202;</span>
+              <span>Dashboard de analytics</span>
+            </div>
+            <div class="welcome-suggestion" onclick="useSuggestion('E-commerce com carrinho de compras, listagem de produtos e checkout')">
+              <span class="suggestion-icon">&#128722;</span>
+              <span>E-commerce com carrinho</span>
+            </div>
+            <div class="welcome-suggestion" onclick="useSuggestion('App de tarefas com categorias, filtros e drag-and-drop')">
+              <span class="suggestion-icon">&#9745;</span>
+              <span>App de tarefas (To-Do)</span>
+            </div>
+            <div class="welcome-suggestion" onclick="useSuggestion('Chat em tempo real com salas, autenticacao e notificacoes')">
+              <span class="suggestion-icon">&#128172;</span>
+              <span>Chat em tempo real</span>
+            </div>
+          </div>
+        </div>
+      `;
+      document.getElementById('fileTreeSection').style.display = 'none';
+      document.getElementById('tabBar').innerHTML = '';
+      document.getElementById('breadcrumbBar').innerHTML = '';
+      document.getElementById('codeViewer').innerHTML = `
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">&#128187;</div>
+          <p>Seu codigo aparecera aqui</p>
+          <span class="empty-hint">Descreva uma aplicacao no chat para comecar</span>
+        </div>
+      `;
+      setStatusFile(null);
+    }
+
+    function updateDailyUsage(dailyTokens, dailyCost) {
+      document.getElementById('dailyTokensDisplay').textContent = dailyTokens || 0;
+      document.getElementById('dailyCostDisplay').textContent = (dailyCost || 0).toFixed(2);
+    }
+
+    async function loadDailyUsage() {
+      try {
+        const res = await fetch('/usage/today');
+        const data = await res.json();
+        updateDailyUsage(data.tokens, data.cost);
+      } catch (err) { }
+    }
+
+    // =============== FILE TREE ===============
+    function buildTree(files) {
+      const tree = {};
+      for (const path of Object.keys(files).sort()) {
+        const parts = path.split('/');
+        let current = tree;
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (i === parts.length - 1) {
+            current[part] = { __file: true, __path: path };
+          } else {
+            if (!current[part] || current[part].__file) {
+              current[part] = {};
+            }
+            current = current[part];
+          }
+        }
+      }
+      return tree;
+    }
+
+    function renderFileTree(files, updatedPaths = []) {
+      const section = document.getElementById('fileTreeSection');
+      section.style.display = 'block';
+      const container = document.getElementById('fileTree');
+      container.innerHTML = '';
+
+      const fileCount = Object.keys(files).length;
+      document.getElementById('fileCount').textContent = `${fileCount} arquivos`;
+
+      const tree = buildTree(files);
+      renderTreeNode(container, tree, 0, updatedPaths, '');
+    }
+
+    function renderTreeNode(container, node, depth, updatedPaths, parentPath) {
+      const entries = Object.entries(node).sort((a, b) => {
+        const aIsFile = a[1] && a[1].__file;
+        const bIsFile = b[1] && b[1].__file;
+        if (aIsFile !== bIsFile) return aIsFile ? 1 : -1;
+        return a[0].localeCompare(b[0]);
+      });
+
+      for (const [name, value] of entries) {
+        const isFile = value && value.__file;
+        const currentPath = parentPath ? `${parentPath}/${name}` : name;
+
+        const div = document.createElement('div');
+        div.className = 'file-tree-item';
+        div.style.paddingLeft = `${12 + depth * 16}px`;
+
+        if (isFile) {
+          const icon = document.createElement('span');
+          icon.className = 'icon file';
+          icon.textContent = getFileIcon(name);
+          div.appendChild(icon);
+
+          const fname = document.createElement('span');
+          fname.className = 'filename';
+          fname.textContent = name;
+          div.appendChild(fname);
+
+          if (updatedPaths.includes(value.__path)) {
+            div.classList.add('updated');
+          }
+
+          const filePath = value.__path;
+          div.onclick = () => openFile(filePath);
+
+          if (filePath === activeTab) {
+            div.classList.add('active');
+          }
+        } else {
+          // Folder
+          const isCollapsed = collapsedFolders.has(currentPath);
+
+          const arrow = document.createElement('span');
+          arrow.className = `folder-arrow${isCollapsed ? ' collapsed' : ''}`;
+          arrow.textContent = '\u25BC';
+          div.appendChild(arrow);
+
+          const icon = document.createElement('span');
+          icon.className = 'icon folder';
+          icon.textContent = isCollapsed ? '\u{1F4C1}' : '\u{1F4C2}';
+          div.appendChild(icon);
+
+          const fname = document.createElement('span');
+          fname.textContent = name;
+          div.appendChild(fname);
+
+          div.onclick = (e) => {
+            e.stopPropagation();
+            toggleFolder(currentPath);
+          };
+        }
+
+        container.appendChild(div);
+
+        if (!isFile) {
+          const childContainer = document.createElement('div');
+          childContainer.className = `file-tree-children${collapsedFolders.has(currentPath) ? ' collapsed' : ''}`;
+          childContainer.id = `folder-${currentPath.replace(/\//g, '-')}`;
+          container.appendChild(childContainer);
+          renderTreeNode(childContainer, value, depth + 1, updatedPaths, currentPath);
+        }
+      }
+    }
+
+    function toggleFolder(path) {
+      if (collapsedFolders.has(path)) {
+        collapsedFolders.delete(path);
+      } else {
+        collapsedFolders.add(path);
+      }
+      localStorage.setItem('collapsedFolders', JSON.stringify([...collapsedFolders]));
+      renderFileTree(projectFiles);
+    }
+
+    function getFileIcon(filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      const icons = {
+        'tsx': '\u{1F7E6}', 'jsx': '\u{1F7E6}', 'ts': '\u{1F7E6}', 'js': '\u{1F7E8}',
+        'py': '\u{1F40D}', 'json': '\u{2699}', 'css': '\u{1F3A8}', 'html': '\u{1F310}',
+        'md': '\u{1F4DD}', 'yaml': '\u{2699}', 'yml': '\u{2699}', 'txt': '\u{1F4C4}',
+        'env': '\u{1F512}', 'gitignore': '\u{2699}', 'lock': '\u{1F512}',
+        'png': '\u{1F5BC}', 'jpg': '\u{1F5BC}', 'svg': '\u{1F5BC}',
+        'toml': '\u{2699}', 'cfg': '\u{2699}', 'ini': '\u{2699}'
+      };
+      return icons[ext] || '\u{1F4C4}';
+    }
+
+    // =============== TABS & CODE VIEWER ===============
+    function openFile(filePath) {
+      if (!openTabs.includes(filePath)) {
+        openTabs.push(filePath);
+      }
+      activeTab = filePath;
+      renderTabs();
+      displayFile(filePath);
+      updateBreadcrumb(filePath);
+      setStatusFile(filePath);
+      renderFileTree(projectFiles);
+    }
+
+    function openFirstFile() {
+      const paths = Object.keys(projectFiles);
+      if (paths.length > 0) {
+        openFile(paths[0]);
+      }
+    }
+
+    function closeTab(filePath, e) {
+      e.stopPropagation();
+      openTabs = openTabs.filter(t => t !== filePath);
+      if (activeTab === filePath) {
+        activeTab = openTabs.length > 0 ? openTabs[openTabs.length - 1] : null;
+      }
+      renderTabs();
+      if (activeTab) {
+        displayFile(activeTab);
+        updateBreadcrumb(activeTab);
+        setStatusFile(activeTab);
+      } else {
+        document.getElementById('codeViewer').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">&#128196;</div>
+            <p>Selecione um arquivo no explorer</p>
+          </div>
+        `;
+        document.getElementById('breadcrumbBar').innerHTML = '';
+        setStatusFile(null);
+      }
+      renderFileTree(projectFiles);
+    }
+
+    function renderTabs() {
+      const bar = document.getElementById('tabBar');
+      bar.innerHTML = '';
+
+      for (const path of openTabs) {
+        const tab = document.createElement('div');
+        tab.className = `tab${path === activeTab ? ' active' : ''}`;
+        tab.onclick = () => openFile(path);
+
+        const name = path.split('/').pop();
+
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'tab-icon';
+        iconSpan.textContent = getFileIcon(name);
+        tab.appendChild(iconSpan);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = name;
+        tab.appendChild(nameSpan);
+
+        const close = document.createElement('span');
+        close.className = 'close-tab';
+        close.textContent = '\u00d7';
+        close.onclick = (e) => closeTab(path, e);
+        tab.appendChild(close);
+
+        bar.appendChild(tab);
+      }
+    }
+
+    function updateBreadcrumb(filePath) {
+      const bar = document.getElementById('breadcrumbBar');
+      const parts = filePath.split('/');
+      bar.innerHTML = '';
+
+      parts.forEach((part, i) => {
+        if (i > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'separator';
+          sep.textContent = '\u203A';
+          bar.appendChild(sep);
+        }
+        const crumb = document.createElement('span');
+        crumb.className = 'crumb';
+        crumb.textContent = part;
+        bar.appendChild(crumb);
+      });
+    }
+
+    function displayFile(filePath) {
+      const viewer = document.getElementById('codeViewer');
+      const file = projectFiles[filePath];
+
+      if (!file) {
+        viewer.innerHTML = '<div class="empty-state"><p>Arquivo nao encontrado</p></div>';
+        return;
+      }
+
+      const content = file.content || '';
+      const lang = mapLanguage(file.language || '');
+      const lines = content.split('\n');
+
+      let lineNums = '';
+      for (let i = 1; i <= lines.length; i++) {
+        lineNums += i + '\n';
+      }
+
+      const safePath = filePath.replace(/'/g, "\\'");
+      viewer.innerHTML = `
+        <button class="copy-btn" onclick="copyFileContent('${safePath}')">Copiar</button>
+        <pre style="display:flex;"><div class="line-numbers-col">${lineNums}</div><code class="language-${lang}">${escapeHtml(content)}</code></pre>
+      `;
+
+      Prism.highlightAll();
+    }
+
+    function mapLanguage(lang) {
+      const map = {
+        'typescript': 'typescript', 'tsx': 'tsx', 'jsx': 'jsx',
+        'javascript': 'javascript', 'js': 'javascript',
+        'python': 'python', 'py': 'python',
+        'json': 'json', 'css': 'css', 'html': 'markup',
+        'markdown': 'markdown', 'md': 'markdown',
+        'yaml': 'yaml', 'yml': 'yaml', 'bash': 'bash',
+        'shell': 'bash', 'text': 'text', 'txt': 'text'
+      };
+      return map[lang] || lang || 'text';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function copyFileContent(filePath) {
+      const file = projectFiles[filePath];
+      if (!file) return;
+      navigator.clipboard.writeText(file.content).then(() => {
+        const btn = document.querySelector('.code-viewer .copy-btn');
+        if (btn) {
+          btn.textContent = 'Copiado!';
+          btn.classList.add('copied');
+          setTimeout(() => {
+            btn.textContent = 'Copiar';
+            btn.classList.remove('copied');
+          }, 2000);
+        }
+      });
+    }
+
+    // =============== HISTORY ===============
+    async function toggleHistory() {
+      const panel = document.getElementById('historyPanel');
+      const overlay = document.getElementById('historyOverlay');
+      const isOpen = panel.classList.contains('open');
+
+      panel.classList.toggle('open');
+      overlay.classList.toggle('open');
+
+      if (!isOpen) {
+        await loadHistoryList();
+      }
+    }
+
+    async function loadHistoryList() {
+      const list = document.getElementById('historyList');
+      list.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:13px;">Carregando...</div>';
+
+      try {
+        const res = await fetch('/projects');
+        const data = await res.json();
+        list.innerHTML = '';
+
+        if (!data.projects || data.projects.length === 0) {
+          list.innerHTML = '<div style="padding:16px;color:var(--text-muted);font-size:13px;">Nenhum projeto encontrado.</div>';
+          return;
+        }
+
+        for (const p of data.projects) {
+          const item = document.createElement('div');
+          item.className = 'history-item';
+          const isActive = p.project_id === currentProjectId;
+
+          const desc = p.description ? p.description : 'Sem descricao';
+          const date = p.updated_at ? formatDate(p.updated_at) : '';
+
+          item.innerHTML = `
+            <div class="history-item-top">
+              <div class="history-name${isActive ? ' active-project' : ''}">${escapeHtml(p.project_name)}</div>
+              <button class="history-delete" onclick="deleteProject('${p.project_id}', event)" title="Deletar projeto">&times;</button>
+            </div>
+            <div class="history-desc">${escapeHtml(desc)}</div>
+            <div class="history-meta">
+              <span class="history-badge">${p.language_label || p.language}</span>
+              <span>${p.num_files} arquivos</span>
+              <span>R$ ${(p.cost_used || 0).toFixed(2)}</span>
+            </div>
+            <div class="history-date">${date}</div>
+          `;
+
+          item.onclick = (e) => {
+            if (e.target.classList.contains('history-delete')) return;
+            loadProject(p.project_id);
+          };
+
+          list.appendChild(item);
+        }
+      } catch (err) {
+        list.innerHTML = '<div style="padding:16px;color:var(--text-muted);">Erro ao carregar projetos.</div>';
+      }
+    }
+
+    async function deleteProject(projectId, e) {
+      e.stopPropagation();
+      if (!confirm('Tem certeza que deseja deletar este projeto?')) return;
+
+      try {
+        const res = await fetch(`/project/${projectId}`, { method: 'DELETE' });
+        const data = await res.json();
+
+        if (data.success) {
+          if (projectId === currentProjectId) {
+            newProject();
+          }
+          showToast('Projeto deletado');
+          await loadHistoryList();
+        }
+      } catch (err) {
+        showToast('Erro ao deletar projeto', 'error');
+      }
+    }
+
+    function formatDate(isoString) {
+      try {
+        const d = new Date(isoString);
+        const now = new Date();
+        const diff = now - d;
+        const mins = Math.floor(diff / 60000);
+        const hours = Math.floor(diff / 3600000);
+        const days = Math.floor(diff / 86400000);
+
+        if (mins < 1) return 'Agora mesmo';
+        if (mins < 60) return `${mins}min atras`;
+        if (hours < 24) return `${hours}h atras`;
+        if (days < 7) return `${days}d atras`;
+
+        return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      } catch {
+        return isoString;
+      }
+    }
+
+    // =============== KEYBOARD SHORTCUTS ===============
+    document.addEventListener('keydown', (e) => {
+      // Ctrl+N = New Project
+      if (e.ctrlKey && e.key === 'n') {
+        e.preventDefault();
+        newProject();
+        document.getElementById('chatInput').focus();
+      }
+      // Ctrl+P = Focus chat
+      if (e.ctrlKey && e.key === 'p') {
+        e.preventDefault();
+        document.getElementById('chatInput').focus();
+      }
+      // Escape = Close history
+      if (e.key === 'Escape') {
+        const panel = document.getElementById('historyPanel');
+        if (panel.classList.contains('open')) {
+          toggleHistory();
+        }
+      }
+    });
   </script>
 </body>
 
