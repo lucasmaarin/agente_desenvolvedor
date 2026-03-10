@@ -2,7 +2,9 @@ from flask import Flask, render_template, request, jsonify
 import os
 import json
 import re
+import base64
 import openai
+import requests as http
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime, date
@@ -30,6 +32,42 @@ COLLECTION = "agente_programacao"
 # OpenAI
 # ===============================
 client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+# ===============================
+# GitHub
+# ===============================
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GITHUB_API = 'https://api.github.com'
+
+SKIP_EXTENSIONS = {
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.woff', '.woff2',
+    '.ttf', '.eot', '.pdf', '.zip', '.tar', '.gz', '.lock', '.map',
+    '.pyc', '.pyo', '.exe', '.dll', '.so', '.bin'
+}
+
+GITHUB_EDIT_PROMPT = """You are an expert software engineer. The user wants to make changes to files in a GitHub repository.
+
+Given the file contents and the user's instruction, return ONLY a valid JSON object (no markdown, no extra text):
+{
+  "commit_message": "type(scope): brief description of changes",
+  "updated_files": {
+    "path/to/file.ext": "complete new file content as string"
+  }
+}
+
+Rules:
+- Only include files that actually need to change.
+- Return the COMPLETE content of each changed file (not diffs or partial content).
+- Use conventional commits: feat / fix / refactor / style / docs / chore / test.
+- If no changes are needed, return updated_files as an empty object {}."""
+
+
+def gh_headers():
+    return {
+        'Authorization': f'token {GITHUB_TOKEN}',
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+    }
 
 # ===============================
 # Controle de custos
@@ -530,6 +568,214 @@ def delete_project(project_id):
 
     doc_ref.delete()
     return jsonify({"success": True, "message": "Projeto deletado."})
+
+
+# ===============================
+# GitHub Routes
+# ===============================
+@app.route('/github/repos', methods=['GET'])
+def github_repos():
+    if not GITHUB_TOKEN:
+        return jsonify({"error": "GITHUB_TOKEN não configurado no .env"}), 400
+    res = http.get(
+        f'{GITHUB_API}/user/repos',
+        params={'per_page': 100, 'sort': 'updated', 'affiliation': 'owner,collaborator'},
+        headers=gh_headers()
+    )
+    if res.status_code != 200:
+        msg = res.json().get('message', 'Erro desconhecido')
+        return jsonify({"error": f"Erro ao buscar repositórios: {msg}"}), 400
+
+    repos = [{
+        "name": r["name"],
+        "full_name": r["full_name"],
+        "private": r["private"],
+        "default_branch": r["default_branch"],
+        "description": r.get("description") or ""
+    } for r in res.json()]
+    return jsonify({"repos": repos})
+
+
+@app.route('/github/repo/<owner>/<repo>/tree', methods=['GET'])
+def github_tree(owner, repo):
+    if not GITHUB_TOKEN:
+        return jsonify({"error": "GITHUB_TOKEN não configurado no .env"}), 400
+
+    branch = request.args.get('branch', '')
+    if not branch:
+        repo_res = http.get(f'{GITHUB_API}/repos/{owner}/{repo}', headers=gh_headers())
+        if repo_res.status_code != 200:
+            return jsonify({"error": "Repositório não encontrado."}), 404
+        branch = repo_res.json().get('default_branch', 'main')
+
+    tree_res = http.get(
+        f'{GITHUB_API}/repos/{owner}/{repo}/git/trees/{branch}',
+        params={'recursive': '1'},
+        headers=gh_headers()
+    )
+    if tree_res.status_code != 200:
+        return jsonify({"error": "Erro ao buscar arquivos do repositório."}), 400
+
+    all_files = [
+        item["path"] for item in tree_res.json().get("tree", [])
+        if item["type"] == "blob"
+        and not any(item["path"].lower().endswith(ext) for ext in SKIP_EXTENSIONS)
+        and 'node_modules/' not in item["path"]
+        and '.git/' not in item["path"]
+    ]
+    return jsonify({"files": all_files, "branch": branch})
+
+
+@app.route('/github/repo/<owner>/<repo>/ai-edit', methods=['POST'])
+def github_ai_edit(owner, repo):
+    if not GITHUB_TOKEN:
+        return jsonify({"error": "GITHUB_TOKEN não configurado no .env"}), 400
+
+    data = request.get_json()
+    instruction = data.get('instruction', '').strip()
+    file_paths = data.get('files', [])
+    branch = data.get('branch', 'main')
+
+    if not instruction:
+        return jsonify({"error": "Forneça uma instrução para a IA."}), 400
+
+    # Se nenhum arquivo foi especificado, busca todos (até 30)
+    if not file_paths:
+        tree_res = http.get(
+            f'{GITHUB_API}/repos/{owner}/{repo}/git/trees/{branch}',
+            params={'recursive': '1'},
+            headers=gh_headers()
+        )
+        if tree_res.status_code != 200:
+            return jsonify({"error": "Erro ao buscar arquivos."}), 400
+        file_paths = [
+            item["path"] for item in tree_res.json().get("tree", [])
+            if item["type"] == "blob"
+            and not any(item["path"].lower().endswith(ext) for ext in SKIP_EXTENSIONS)
+            and 'node_modules/' not in item["path"]
+        ]
+        file_paths = file_paths[:30]
+
+    # Busca conteúdo de cada arquivo
+    files_content = {}
+    for path in file_paths:
+        file_res = http.get(
+            f'{GITHUB_API}/repos/{owner}/{repo}/contents/{path}',
+            params={'ref': branch},
+            headers=gh_headers()
+        )
+        if file_res.status_code == 200:
+            try:
+                content = base64.b64decode(file_res.json()['content']).decode('utf-8', errors='replace')
+                files_content[path] = content
+            except Exception:
+                pass
+
+    if not files_content:
+        return jsonify({"error": "Nenhum arquivo encontrado para editar."}), 400
+
+    files_text = "\n".join(f"--- {p} ---\n{c}\n" for p, c in files_content.items())
+
+    messages = [
+        {"role": "system", "content": GITHUB_EDIT_PROMPT},
+        {"role": "user", "content": f"Repository: {owner}/{repo}\n\nFiles:\n{files_text}\n\nInstruction: {instruction}"}
+    ]
+
+    try:
+        parsed, usage = call_ai(messages)
+    except Exception as e:
+        return jsonify({"error": f"Erro ao processar com IA: {str(e)}"}), 500
+
+    tokens_used = usage.total_tokens
+    cost = round((tokens_used / 1000) * PRICE_PER_1000_TOKENS_USD * USD_TO_BRL, 4)
+    track_daily_usage(tokens_used, cost)
+
+    updated_files = parsed.get("updated_files", {})
+    commit_message = parsed.get("commit_message", f"ai: {instruction[:72]}")
+
+    if not updated_files:
+        return jsonify({"error": "A IA não identificou nenhuma alteração necessária.", "commit_message": commit_message}), 400
+
+    # Commita via GitHub Git Data API (suporta múltiplos arquivos num único commit)
+    try:
+        ref_res = http.get(
+            f'{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{branch}',
+            headers=gh_headers()
+        )
+        if ref_res.status_code != 200:
+            return jsonify({"error": f"Branch '{branch}' não encontrada."}), 400
+
+        latest_sha = ref_res.json()["object"]["sha"]
+
+        commit_res = http.get(
+            f'{GITHUB_API}/repos/{owner}/{repo}/git/commits/{latest_sha}',
+            headers=gh_headers()
+        )
+        base_tree_sha = commit_res.json()["tree"]["sha"]
+
+        # Cria blobs para cada arquivo alterado
+        new_tree = []
+        for file_path, new_content in updated_files.items():
+            blob_res = http.post(
+                f'{GITHUB_API}/repos/{owner}/{repo}/git/blobs',
+                headers=gh_headers(),
+                json={"content": new_content, "encoding": "utf-8"}
+            )
+            if blob_res.status_code == 201:
+                new_tree.append({
+                    "path": file_path,
+                    "mode": "100644",
+                    "type": "blob",
+                    "sha": blob_res.json()["sha"]
+                })
+
+        if not new_tree:
+            return jsonify({"error": "Falha ao criar blobs no GitHub."}), 500
+
+        # Cria nova tree
+        tree_res = http.post(
+            f'{GITHUB_API}/repos/{owner}/{repo}/git/trees',
+            headers=gh_headers(),
+            json={"base_tree": base_tree_sha, "tree": new_tree}
+        )
+        if tree_res.status_code != 201:
+            return jsonify({"error": "Erro ao criar tree no GitHub."}), 500
+
+        # Cria o commit
+        new_commit_res = http.post(
+            f'{GITHUB_API}/repos/{owner}/{repo}/git/commits',
+            headers=gh_headers(),
+            json={"message": commit_message, "tree": tree_res.json()["sha"], "parents": [latest_sha]}
+        )
+        if new_commit_res.status_code != 201:
+            return jsonify({"error": "Erro ao criar commit no GitHub."}), 500
+
+        new_commit_sha = new_commit_res.json()["sha"]
+
+        # Atualiza a referência da branch
+        update_res = http.patch(
+            f'{GITHUB_API}/repos/{owner}/{repo}/git/refs/heads/{branch}',
+            headers=gh_headers(),
+            json={"sha": new_commit_sha}
+        )
+        if update_res.status_code != 200:
+            return jsonify({"error": "Erro ao atualizar branch no GitHub."}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Erro ao commitar no GitHub: {str(e)}"}), 500
+
+    daily = get_daily_usage()
+
+    return jsonify({
+        "commit_sha": new_commit_sha,
+        "commit_url": f"https://github.com/{owner}/{repo}/commit/{new_commit_sha}",
+        "commit_message": commit_message,
+        "files_changed": list(updated_files.keys()),
+        "tokens_used": tokens_used,
+        "cost_used": cost,
+        "daily_tokens": daily["tokens"],
+        "daily_cost": daily["cost"]
+    })
 
 
 # ===============================

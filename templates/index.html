@@ -23,6 +23,232 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+
+  <style>
+    /* ===== GitHub Modal ===== */
+    .github-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 300;
+    }
+    .github-overlay.open { display: block; }
+
+    .github-panel {
+      position: fixed;
+      top: 0; right: -520px;
+      width: 500px; height: 100%;
+      background: var(--bg-sidebar, #1e1e2e);
+      border-left: 1px solid var(--border, #3a3a5c);
+      z-index: 301;
+      display: flex;
+      flex-direction: column;
+      transition: right .25s ease;
+    }
+    .github-panel.open { right: 0; }
+
+    .github-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border, #3a3a5c);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text, #cdd6f4);
+      flex-shrink: 0;
+    }
+    .github-header-actions { display: flex; gap: 8px; align-items: center; }
+    .github-close-btn {
+      background: none; border: none;
+      color: var(--text-muted, #888);
+      font-size: 18px; cursor: pointer; padding: 2px 6px;
+    }
+    .github-close-btn:hover { color: var(--text, #cdd6f4); }
+
+    .github-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .github-search {
+      width: 100%;
+      background: var(--bg-input, #313244);
+      border: 1px solid var(--border, #3a3a5c);
+      border-radius: 6px;
+      color: var(--text, #cdd6f4);
+      padding: 8px 12px;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .github-search:focus { outline: none; border-color: var(--accent, #89b4fa); }
+
+    .github-repo-list { display: flex; flex-direction: column; gap: 4px; }
+    .github-repo-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background .15s;
+    }
+    .github-repo-item:hover { background: var(--bg-hover, #2a2a3e); border-color: var(--border, #3a3a5c); }
+    .github-repo-item.selected { border-color: var(--accent, #89b4fa); background: rgba(137,180,250,.08); }
+    .github-repo-name { font-size: 13px; font-weight: 600; color: var(--text, #cdd6f4); }
+    .github-repo-desc { font-size: 12px; color: var(--text-muted, #888); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .github-repo-meta { display: flex; gap: 8px; margin-top: 4px; }
+    .github-badge {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: var(--bg-hover, #2a2a3e);
+      color: var(--text-muted, #888);
+      border: 1px solid var(--border, #3a3a5c);
+    }
+
+    .github-section-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-muted, #888);
+      margin-bottom: 4px;
+    }
+
+    .github-scope-row {
+      display: flex;
+      gap: 12px;
+    }
+    .github-scope-option {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; color: var(--text, #cdd6f4);
+      cursor: pointer;
+    }
+    .github-scope-option input[type=radio] { accent-color: var(--accent, #89b4fa); }
+
+    .github-file-list {
+      max-height: 220px;
+      overflow-y: auto;
+      background: var(--bg-input, #313244);
+      border: 1px solid var(--border, #3a3a5c);
+      border-radius: 6px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .github-file-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 6px; border-radius: 4px; cursor: pointer;
+      font-size: 12px; color: var(--text, #cdd6f4);
+    }
+    .github-file-item:hover { background: var(--bg-hover, #2a2a3e); }
+    .github-file-item input[type=checkbox] { accent-color: var(--accent, #89b4fa); flex-shrink: 0; }
+
+    .github-instruction {
+      width: 100%;
+      background: var(--bg-input, #313244);
+      border: 1px solid var(--border, #3a3a5c);
+      border-radius: 6px;
+      color: var(--text, #cdd6f4);
+      padding: 10px 12px;
+      font-size: 13px;
+      resize: vertical;
+      min-height: 80px;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    .github-instruction:focus { outline: none; border-color: var(--accent, #89b4fa); }
+
+    .github-apply-btn {
+      width: 100%;
+      padding: 10px;
+      background: var(--accent, #89b4fa);
+      color: #1e1e2e;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .github-apply-btn:hover { opacity: .88; }
+    .github-apply-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .github-back-btn {
+      background: none;
+      border: 1px solid var(--border, #3a3a5c);
+      color: var(--text-muted, #888);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .github-back-btn:hover { color: var(--text, #cdd6f4); border-color: var(--text-muted, #888); }
+
+    .github-result {
+      background: var(--bg-input, #313244);
+      border: 1px solid var(--border, #3a3a5c);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .github-result-title {
+      font-size: 13px; font-weight: 600;
+      color: #a6e3a1;
+      margin-bottom: 10px;
+    }
+    .github-commit-msg {
+      font-size: 13px;
+      color: var(--text, #cdd6f4);
+      background: var(--bg-hover, #2a2a3e);
+      padding: 8px 10px;
+      border-radius: 5px;
+      margin-bottom: 10px;
+      word-break: break-all;
+    }
+    .github-changed-files { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+    .github-changed-file {
+      font-size: 12px; color: #a6e3a1;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .github-commit-link {
+      display: block;
+      font-size: 12px;
+      color: var(--accent, #89b4fa);
+      text-decoration: none;
+    }
+    .github-commit-link:hover { text-decoration: underline; }
+
+    .github-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 32px 16px;
+      color: var(--text-muted, #888);
+      font-size: 13px;
+    }
+    .github-spinner {
+      width: 28px; height: 28px;
+      border: 3px solid var(--border, #3a3a5c);
+      border-top-color: var(--accent, #89b4fa);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .github-error {
+      background: rgba(243,139,168,.12);
+      border: 1px solid rgba(243,139,168,.4);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #f38ba8;
+    }
+  </style>
 </head>
 
 <body>
@@ -39,6 +265,7 @@
       <span class="daily-usage" title="Uso de hoje">
         Hoje: <strong id="dailyTokensDisplay">0</strong> tokens &middot; R$ <strong id="dailyCostDisplay">0.00</strong>
       </span>
+      <button class="topbar-btn" onclick="toggleGithub()">GitHub</button>
       <button class="topbar-btn" id="historyBtn" onclick="toggleHistory()">Projetos</button>
       <button class="topbar-btn" id="newProjectBtn" onclick="newProject()">+ Novo</button>
     </div>
@@ -128,6 +355,20 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- =============== GITHUB =============== -->
+  <div class="github-overlay" id="githubOverlay" onclick="closeGithub()"></div>
+  <div class="github-panel" id="githubPanel">
+    <div class="github-header">
+      <span>&#128736; GitHub</span>
+      <div class="github-header-actions">
+        <button class="github-close-btn" onclick="closeGithub()">&times;</button>
+      </div>
+    </div>
+    <div class="github-body" id="githubBody">
+      <!-- conteudo injetado por JS -->
+    </div>
   </div>
 
   <!-- =============== HISTORY =============== -->
@@ -907,6 +1148,214 @@
       } catch {
         return isoString;
       }
+    }
+
+    // =============== GITHUB ===============
+    let ghRepos = [];
+    let ghSelectedRepo = null;
+    let ghBranch = '';
+    let ghFiles = [];
+
+    function toggleGithub() {
+      const panel = document.getElementById('githubPanel');
+      const overlay = document.getElementById('githubOverlay');
+      const isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        closeGithub();
+      } else {
+        panel.classList.add('open');
+        overlay.classList.add('open');
+        renderGithubRepos();
+      }
+    }
+
+    function closeGithub() {
+      document.getElementById('githubPanel').classList.remove('open');
+      document.getElementById('githubOverlay').classList.remove('open');
+    }
+
+    async function renderGithubRepos() {
+      const body = document.getElementById('githubBody');
+      body.innerHTML = `<div class="github-loading"><div class="github-spinner"></div><span>Carregando repositórios...</span></div>`;
+
+      try {
+        const res = await fetch('/github/repos');
+        const data = await res.json();
+        if (data.error) { showGithubError(data.error); return; }
+        ghRepos = data.repos || [];
+      } catch (e) {
+        showGithubError('Erro de conexão com o servidor.');
+        return;
+      }
+
+      body.innerHTML = `
+        <div class="github-section-label">Selecione um repositório</div>
+        <input class="github-search" id="ghRepoSearch" placeholder="Buscar repositório..." oninput="filterGhRepos()">
+        <div class="github-repo-list" id="ghRepoList"></div>
+      `;
+      filterGhRepos();
+    }
+
+    function filterGhRepos() {
+      const q = document.getElementById('ghRepoSearch').value.toLowerCase();
+      const list = document.getElementById('ghRepoList');
+      const filtered = q ? ghRepos.filter(r => r.name.toLowerCase().includes(q) || r.description.toLowerCase().includes(q)) : ghRepos;
+
+      if (!filtered.length) {
+        list.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:8px 4px;">Nenhum repositório encontrado.</div>';
+        return;
+      }
+
+      list.innerHTML = filtered.map(r => `
+        <div class="github-repo-item" onclick="selectGhRepo('${r.full_name}', '${r.default_branch}')">
+          <div class="github-repo-name">${escapeHtml(r.name)}</div>
+          ${r.description ? `<div class="github-repo-desc">${escapeHtml(r.description)}</div>` : ''}
+          <div class="github-repo-meta">
+            ${r.private ? '<span class="github-badge">privado</span>' : '<span class="github-badge">público</span>'}
+            <span class="github-badge">${r.default_branch}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function selectGhRepo(fullName, defaultBranch) {
+      ghSelectedRepo = fullName;
+      ghBranch = defaultBranch;
+      const [owner, repo] = fullName.split('/');
+      const body = document.getElementById('githubBody');
+
+      body.innerHTML = `<div class="github-loading"><div class="github-spinner"></div><span>Carregando arquivos...</span></div>`;
+
+      try {
+        const res = await fetch(`/github/repo/${owner}/${repo}/tree?branch=${defaultBranch}`);
+        const data = await res.json();
+        if (data.error) { showGithubError(data.error); return; }
+        ghFiles = data.files || [];
+        ghBranch = data.branch;
+      } catch (e) {
+        showGithubError('Erro ao buscar arquivos do repositório.');
+        return;
+      }
+
+      renderGithubEditStep(owner, repo);
+    }
+
+    function renderGithubEditStep(owner, repo) {
+      const body = document.getElementById('githubBody');
+      const fileCheckboxes = ghFiles.map(f => `
+        <label class="github-file-item">
+          <input type="checkbox" class="gh-file-cb" value="${escapeHtml(f)}">
+          <span>${escapeHtml(f)}</span>
+        </label>
+      `).join('');
+
+      body.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="github-back-btn" onclick="renderGithubRepos()">&#8592; Voltar</button>
+          <span style="font-size:13px;font-weight:600;color:var(--text)">${escapeHtml(owner)}/${escapeHtml(repo)}</span>
+          <span class="github-badge">${escapeHtml(ghBranch)}</span>
+        </div>
+
+        <div>
+          <div class="github-section-label">Escopo</div>
+          <div class="github-scope-row">
+            <label class="github-scope-option">
+              <input type="radio" name="ghScope" value="all" checked onchange="toggleGhScope(this)">
+              Projeto inteiro
+            </label>
+            <label class="github-scope-option">
+              <input type="radio" name="ghScope" value="selected" onchange="toggleGhScope(this)">
+              Arquivos específicos
+            </label>
+          </div>
+        </div>
+
+        <div id="ghFileListWrapper" style="display:none;">
+          <div class="github-section-label">Selecione os arquivos (${ghFiles.length} disponíveis)</div>
+          <div class="github-file-list">${fileCheckboxes}</div>
+        </div>
+
+        <div>
+          <div class="github-section-label">Instrução para a IA</div>
+          <textarea class="github-instruction" id="ghInstruction" placeholder="Descreva as alterações que deseja fazer nos arquivos selecionados..."></textarea>
+        </div>
+
+        <button class="github-apply-btn" id="ghApplyBtn" onclick="applyGithubEdit('${escapeHtml(owner)}', '${escapeHtml(repo)}')">
+          Aplicar com IA e Commitar
+        </button>
+
+        <div id="ghResultArea"></div>
+      `;
+    }
+
+    function toggleGhScope(radio) {
+      const wrapper = document.getElementById('ghFileListWrapper');
+      wrapper.style.display = radio.value === 'selected' ? 'block' : 'none';
+    }
+
+    async function applyGithubEdit(owner, repo) {
+      const instruction = document.getElementById('ghInstruction').value.trim();
+      if (!instruction) { showToast('Digite uma instrução para a IA.', 'error'); return; }
+
+      const scope = document.querySelector('input[name="ghScope"]:checked').value;
+      let selectedFiles = [];
+      if (scope === 'selected') {
+        selectedFiles = [...document.querySelectorAll('.gh-file-cb:checked')].map(cb => cb.value);
+        if (!selectedFiles.length) { showToast('Selecione pelo menos um arquivo.', 'error'); return; }
+      }
+
+      const btn = document.getElementById('ghApplyBtn');
+      const resultArea = document.getElementById('ghResultArea');
+      btn.disabled = true;
+      btn.textContent = 'Processando...';
+      resultArea.innerHTML = `<div class="github-loading"><div class="github-spinner"></div><span>A IA está analisando e editando os arquivos...</span></div>`;
+
+      try {
+        const res = await fetch(`/github/repo/${owner}/${repo}/ai-edit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instruction, files: selectedFiles, branch: ghBranch })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          resultArea.innerHTML = `<div class="github-error">${escapeHtml(data.error)}</div>`;
+          btn.disabled = false;
+          btn.textContent = 'Aplicar com IA e Commitar';
+          return;
+        }
+
+        updateDailyUsage(data.daily_tokens, data.daily_cost);
+
+        const changedList = data.files_changed.map(f => `
+          <div class="github-changed-file">&#10003; ${escapeHtml(f)}</div>
+        `).join('');
+
+        resultArea.innerHTML = `
+          <div class="github-result">
+            <div class="github-result-title">&#10003; Commit realizado com sucesso</div>
+            <div class="github-section-label">Mensagem do commit</div>
+            <div class="github-commit-msg">${escapeHtml(data.commit_message)}</div>
+            <div class="github-section-label">${data.files_changed.length} arquivo(s) alterado(s)</div>
+            <div class="github-changed-files">${changedList}</div>
+            <a class="github-commit-link" href="${data.commit_url}" target="_blank">&#128279; Ver commit no GitHub</a>
+          </div>
+        `;
+        showToast(`Commit feito: ${data.files_changed.length} arquivo(s) alterado(s)`);
+
+      } catch (e) {
+        resultArea.innerHTML = `<div class="github-error">Erro de conexão com o servidor.</div>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Aplicar com IA e Commitar';
+      }
+    }
+
+    function showGithubError(msg) {
+      document.getElementById('githubBody').innerHTML = `
+        <div class="github-error">${escapeHtml(msg)}</div>
+        <button class="github-back-btn" onclick="renderGithubRepos()" style="margin-top:12px;">Tentar novamente</button>
+      `;
     }
 
     // =============== KEYBOARD SHORTCUTS ===============
