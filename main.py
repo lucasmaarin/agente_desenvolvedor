@@ -1,5 +1,7 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 import os
+import io
+import zipfile
 import json
 import re
 import base64
@@ -29,9 +31,20 @@ db = firestore.client()
 COLLECTION = "agente_programacao"
 
 # ===============================
-# OpenAI
+# AI Client (OpenAI API ou modelo local via Ollama)
+# Defina AI_PROVIDER=local no .env para usar Ollama
 # ===============================
-client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+AI_PROVIDER = os.getenv('AI_PROVIDER', 'openai').lower()
+
+if AI_PROVIDER == 'local':
+    client = openai.OpenAI(
+        base_url=os.getenv('LOCAL_AI_URL', 'http://localhost:11434/v1'),
+        api_key=os.getenv('LOCAL_AI_KEY', 'ollama')
+    )
+    AI_MODEL = os.getenv('LOCAL_AI_MODEL', 'qwen2.5-coder:7b')
+else:
+    client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+    AI_MODEL = os.getenv('OPENAI_MODEL', 'o4-mini')
 
 # ===============================
 # GitHub
@@ -75,6 +88,14 @@ def gh_headers():
 PRICE_PER_1000_TOKENS_USD = 0.002
 USD_TO_BRL = 5.0
 
+
+def get_tokens_and_cost(usage):
+    tokens = usage.total_tokens if usage else 0
+    if AI_PROVIDER == 'local':
+        return tokens, 0.0
+    cost = round((tokens / 1000) * PRICE_PER_1000_TOKENS_USD * USD_TO_BRL, 4)
+    return tokens, cost
+
 # ===============================
 # Prompts de arquitetura por stack
 # ===============================
@@ -113,6 +134,20 @@ Architecture guidelines:
 - Use enums or union types for constants.
 - Add ESLint with @typescript-eslint plugin.""",
 
+    "vanilla": """Stack: HTML, CSS e JavaScript puro (sem frameworks).
+
+Architecture guidelines:
+- Structure: index.html na raiz, css/style.css, js/main.js e pastas adicionais conforme necessidade.
+- Use HTML5 semântico: header, main, section, article, footer, nav.
+- CSS: variáveis CSS (custom properties) para cores e fontes, Flexbox e Grid para layout, media queries para responsividade mobile-first.
+- JavaScript: ES6+ (const/let, arrow functions, template literals, destructuring, fetch API, async/await).
+- Separe responsabilidades: HTML para estrutura, CSS para estilo, JS para comportamento.
+- Organize o JS em módulos lógicos dentro do mesmo arquivo ou em arquivos separados em js/.
+- Use fetch API para chamadas HTTP quando necessário.
+- Inclua um arquivo README.md com instruções de como abrir o projeto.
+- Não use dependências externas — apenas HTML, CSS e JS nativos do navegador.
+- O projeto deve funcionar abrindo o index.html diretamente no navegador (sem servidor).""",
+
     "python": """Stack: Python.
 
 Architecture guidelines:
@@ -140,6 +175,7 @@ The JSON format MUST be:
 {
   "project_name": "short-kebab-case-name",
   "folder_structure": "A visual tree string using unicode box-drawing characters (├──, └──, │)",
+  "summary": "Resumo em português (4-6 frases) explicando: qual tipo de aplicação foi criada, a arquitetura escolhida e por quê, os arquivos mais importantes e o que cada um faz, e como rodar o projeto.",
   "files": {
     "relative/path/to/file.ext": {
       "content": "full file content as a string",
@@ -153,6 +189,7 @@ Rules:
 - Include ALL necessary config files.
 - Include helpful comments in the code explaining the logic.
 - The "language" field should be one of: python, javascript, typescript, tsx, jsx, json, css, html, markdown, yaml, text, bash.
+- The "summary" field must always be in Brazilian Portuguese.
 - Return ONLY the JSON. No explanation before or after."""
 
 CHAT_JSON_FORMAT = """
@@ -165,13 +202,15 @@ Return a JSON object with ONLY the files that changed or were added:
     }}
   }},
   "deleted_files": ["path/to/removed/file.ext"],
-  "folder_structure": "updated full visual tree string"
+  "folder_structure": "updated full visual tree string",
+  "summary": "Resumo em português (3-5 frases) explicando: o que foi alterado e por quê, quais arquivos foram modificados/criados/removidos e o impacto da mudança, e se há algo importante que o desenvolvedor precisa saber (dependências, breaking changes, próximos passos sugeridos)."
 }}
 
 Rules:
 - Return the COMPLETE content of each changed file, not diffs.
 - If no files were deleted, use an empty array.
 - Always include the updated folder_structure reflecting any structural changes.
+- The "summary" field must always be in Brazilian Portuguese.
 - Return ONLY valid JSON. No explanation before or after."""
 
 
@@ -215,7 +254,7 @@ def parse_ai_json(text):
 def call_ai(messages, max_retries=2):
     for attempt in range(max_retries + 1):
         response = client.chat.completions.create(
-            model="o4-mini",
+            model=AI_MODEL,
             messages=messages
         )
         content = response.choices[0].message.content
@@ -325,7 +364,8 @@ def create_project():
     lang_labels = {
         "react": "React (JavaScript)",
         "react-ts": "React with TypeScript",
-        "python": "Python"
+        "python": "Python",
+        "vanilla": "HTML + CSS + JavaScript"
     }
     lang_label = lang_labels.get(language, language)
     user_msg = f"Build this application using {lang_label}:\n\n{description}"
@@ -342,15 +382,15 @@ def create_project():
     except Exception as e:
         return jsonify({"error": f"Erro ao gerar projeto: {str(e)}"}), 500
 
-    tokens_used = usage.total_tokens
-    cost = round((tokens_used / 1000) * PRICE_PER_1000_TOKENS_USD * USD_TO_BRL, 4)
+    tokens_used, cost = get_tokens_and_cost(usage)
 
     # Tracking diário
     track_daily_usage(tokens_used, cost)
 
     project_name = parsed.get("project_name", "meu-projeto")
     num_files = len(parsed.get("files", {}))
-    assistant_msg = f"Projeto '{project_name}' criado com {num_files} arquivos usando {lang_label}."
+    default_msg = f"Projeto '{project_name}' criado com {num_files} arquivos usando {lang_label}."
+    assistant_msg = parsed.get("summary") or default_msg
 
     project_data = {
         "project_name": project_name,
@@ -386,6 +426,7 @@ def create_project():
         "folder_structure": project_data["folder_structure"],
         "files": project_data["files"],
         "conversation": conversation,
+        "assistant_msg": assistant_msg,
         "tokens_used": tokens_used,
         "cost_used": cost,
         "daily_tokens": daily["tokens"],
@@ -468,8 +509,7 @@ def chat_project(project_id):
     except Exception as e:
         return jsonify({"error": f"Erro ao processar: {str(e)}"}), 500
 
-    req_tokens = usage.total_tokens
-    req_cost = round((req_tokens / 1000) * PRICE_PER_1000_TOKENS_USD * USD_TO_BRL, 4)
+    req_tokens, req_cost = get_tokens_and_cost(usage)
 
     # Tracking diário
     track_daily_usage(req_tokens, req_cost)
@@ -489,9 +529,10 @@ def chat_project(project_id):
 
     new_structure = parsed.get("folder_structure", project.get("folder_structure", ""))
 
-    assistant_msg = f"Atualizado {len(updated_files)} arquivo(s)."
+    default_msg = f"Atualizado {len(updated_files)} arquivo(s)."
     if deleted_files:
-        assistant_msg += f" Removido {len(deleted_files)} arquivo(s)."
+        default_msg += f" Removido {len(deleted_files)} arquivo(s)."
+    assistant_msg = parsed.get("summary") or default_msg
 
     # Salvar mensagens na subcoleção
     now = datetime.utcnow().isoformat()
@@ -519,6 +560,9 @@ def chat_project(project_id):
         "deleted_files": deleted_files,
         "files": current_files,
         "conversation": conversation_list,
+        "assistant_msg": assistant_msg,
+        "req_tokens": req_tokens,
+        "req_cost": req_cost,
         "tokens_used": tokens_used,
         "cost_used": total_cost,
         "daily_tokens": daily["tokens"],
@@ -532,7 +576,8 @@ def list_projects():
     lang_labels = {
         "react": "React",
         "react-ts": "React + TS",
-        "python": "Python"
+        "python": "Python",
+        "vanilla": "HTML + CSS + JS"
     }
     projects = []
     for doc in docs:
@@ -686,8 +731,7 @@ def github_ai_edit(owner, repo):
     except Exception as e:
         return jsonify({"error": f"Erro ao processar com IA: {str(e)}"}), 500
 
-    tokens_used = usage.total_tokens
-    cost = round((tokens_used / 1000) * PRICE_PER_1000_TOKENS_USD * USD_TO_BRL, 4)
+    tokens_used, cost = get_tokens_and_cost(usage)
     track_daily_usage(tokens_used, cost)
 
     updated_files = parsed.get("updated_files", {})
@@ -776,6 +820,49 @@ def github_ai_edit(owner, repo):
         "daily_tokens": daily["tokens"],
         "daily_cost": daily["cost"]
     })
+
+
+# ===============================
+# Download do projeto como ZIP
+# ===============================
+@app.route('/project/<project_id>/download', methods=['GET'])
+def download_project(project_id):
+    doc_ref = projects_collection().document(project_id)
+    doc = doc_ref.get()
+    if not doc.exists:
+        return jsonify({"error": "Projeto não encontrado."}), 404
+
+    data = doc.to_dict()
+    files = data.get("files", {})
+    project_name = data.get("project_name", "projeto")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for path, file_info in files.items():
+            zf.writestr(f"{project_name}/{path}", file_info.get("content", ""))
+    buf.seek(0)
+
+    return send_file(
+        buf,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f"{project_name}.zip"
+    )
+
+
+# ===============================
+# Info do provedor de IA ativo
+# ===============================
+@app.route('/ai/info', methods=['GET'])
+def ai_info():
+    local_url = os.getenv('LOCAL_AI_URL', '')
+    if AI_PROVIDER == 'openai':
+        provider_label = 'OpenAI'
+    elif 'groq.com' in local_url:
+        provider_label = 'Groq'
+    else:
+        provider_label = 'Ollama'
+    return jsonify({"provider_label": provider_label, "model": AI_MODEL})
 
 
 # ===============================

@@ -260,6 +260,7 @@
     </div>
     <div class="topbar-center">
       <span id="projectName">Nenhum projeto</span>
+      <span class="stack-badge" id="stackBadge" style="display:none;"></span>
     </div>
     <div class="topbar-right">
       <span class="daily-usage" title="Uso de hoje">
@@ -315,6 +316,7 @@
                   <option value="react">React (JS)</option>
                   <option value="react-ts">React + TS</option>
                   <option value="python">Python</option>
+                  <option value="vanilla">HTML + CSS + JS</option>
                 </select>
                 <span class="kbd-hint">
                   <span class="kbd">Enter</span> enviar
@@ -332,7 +334,10 @@
       <div class="file-tree-section" id="fileTreeSection" style="display:none;">
         <div class="file-tree-header">
           <span>Explorer</span>
-          <span class="file-count" id="fileCount"></span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="file-count" id="fileCount"></span>
+            <button class="download-btn" id="downloadBtn" onclick="downloadProject()" title="Baixar projeto como ZIP" style="display:none;">&#8595; ZIP</button>
+          </div>
         </div>
         <div id="fileTree"></div>
       </div>
@@ -392,6 +397,10 @@
     <div class="statusbar-right">
       <div class="statusbar-item" id="statusFileInfo"></div>
       <div class="statusbar-item" id="statusLang"></div>
+      <div class="model-indicator" id="modelIndicator" style="display:none;">
+        <span class="model-dot"></span>
+        <span class="model-name" id="modelName"></span>
+      </div>
     </div>
   </footer>
 
@@ -536,6 +545,7 @@
       div.appendChild(label);
 
       const text = document.createElement('div');
+      text.style.whiteSpace = 'pre-wrap';
       text.textContent = content;
       div.appendChild(text);
 
