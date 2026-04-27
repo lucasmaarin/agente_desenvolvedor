@@ -74,16 +74,12 @@ body {
 .topbar-left .copilot-icon {
     width: 30px;
     height: 30px;
-    background: linear-gradient(135deg, #6e40c9, #58a6ff);
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
-    font-weight: 700;
-    color: #fff;
-    letter-spacing: -0.5px;
-    box-shadow: 0 2px 8px rgba(110, 64, 201, 0.3);
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
 .topbar-left .app-title {
@@ -2062,14 +2058,10 @@ body {
 }
 
 /* Gradient overrides for green theme (hardcoded values in base CSS) */
-[data-theme="green"] .copilot-icon,
 [data-theme="green"] #newProjectBtn,
 [data-theme="green"] .send-btn,
 [data-theme="green"] .settings-save-btn {
     background: linear-gradient(135deg, #337418, #5dd62c) !important;
-}
-[data-theme="green"] .copilot-icon {
-    box-shadow: 0 2px 8px rgba(93, 214, 44, 0.3) !important;
 }
 [data-theme="green"] #newProjectBtn:hover {
     box-shadow: 0 2px 8px rgba(93, 214, 44, 0.4) !important;
