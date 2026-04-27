@@ -3,7 +3,7 @@ services:
     name: ai-code-agent
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    startCommand: python main.py
     envVars:
       - key: AI_PROVIDER
         value: local
@@ -25,3 +25,5 @@ services:
       # Deixe vazio no Render (sem disco para escrita de arquivos):
       - key: PROJECTS_OUTPUT_DIR
         value: ""
+      - key: FLASK_ENV
+        value: production
