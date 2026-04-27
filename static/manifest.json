@@ -1,0 +1,19 @@
+{
+  "name": "AI Code Agent",
+  "short_name": "Code Agent",
+  "description": "Agente de programação com IA — gera projetos completos a partir de uma descrição",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f0f",
+  "theme_color": "#5dd62c",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/img/logo.webp",
+      "sizes": "any",
+      "type": "image/webp",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "developer"]
+}

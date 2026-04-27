@@ -3,8 +3,18 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>AI Code Agent</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#5dd62c">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Code Agent">
+  <link rel="apple-touch-icon" href="/static/img/logo.webp">
+
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
   <!-- Prism.js Dark Theme -->
@@ -266,6 +276,8 @@
       <span class="daily-usage" title="Uso de hoje">
         Hoje: <strong id="dailyTokensDisplay">0</strong> tokens &middot; R$ <strong id="dailyCostDisplay">0.00</strong>
       </span>
+      <button class="topbar-btn" onclick="toggleAssistant()" id="assistantBtn">&#10022; Assistente</button>
+      <button class="topbar-btn" onclick="toggleSettings()" id="settingsBtn">&#9881; Config</button>
       <button class="topbar-btn" onclick="toggleGithub()">GitHub</button>
       <button class="topbar-btn" id="historyBtn" onclick="toggleHistory()">Projetos</button>
       <button class="topbar-btn" id="newProjectBtn" onclick="newProject()">+ Novo</button>
@@ -278,38 +290,58 @@
     <!-- LEFT PANEL -->
     <div class="left-panel" id="leftPanel">
 
-      <!-- Chat -->
-      <div class="chat-section">
-        <div class="chat-header">Chat</div>
+      <!-- Left Tab Bar -->
+      <div class="left-tab-bar">
+        <button class="left-tab active" id="tabChat" onclick="switchLeftTab('chat')">
+          &#9679; Chat
+        </button>
+        <button class="left-tab" id="tabExplorer" onclick="switchLeftTab('explorer')">
+          &#9707; Explorer
+          <span class="left-tab-badge" id="explorerBadge" style="display:none;"></span>
+        </button>
+      </div>
+
+      <!-- Chat Tab Content -->
+      <div class="left-tab-content" id="contentChat">
         <div class="chat-messages" id="chatMessages">
           <div class="chat-welcome" id="chatWelcome">
             <div class="welcome-icon">&#9672;</div>
             <div class="welcome-title">AI Code Agent</div>
             <div class="welcome-subtitle">Descreva a aplicacao que deseja criar e eu gero o projeto completo para voce.</div>
             <div class="welcome-suggestions">
-              <div class="welcome-suggestion" onclick="useSuggestion('Dashboard de analytics com graficos e tabela de dados')">
-                <span class="suggestion-icon">&#128202;</span>
-                <span>Dashboard de analytics</span>
+              <div class="welcome-suggestion" onclick="useSuggestion('API REST com autenticação JWT, CRUD completo e documentação Swagger')">
+                <span class="suggestion-icon">&#128279;</span>
+                <span>API REST com autenticação JWT</span>
               </div>
-              <div class="welcome-suggestion" onclick="useSuggestion('E-commerce com carrinho de compras, listagem de produtos e checkout')">
-                <span class="suggestion-icon">&#128722;</span>
-                <span>E-commerce com carrinho</span>
+              <div class="welcome-suggestion" onclick="useSuggestion('Landing page profissional com hero, features, pricing e formulário de contato')">
+                <span class="suggestion-icon">&#127760;</span>
+                <span>Landing page profissional</span>
               </div>
-              <div class="welcome-suggestion" onclick="useSuggestion('App de tarefas com categorias, filtros e drag-and-drop')">
-                <span class="suggestion-icon">&#9745;</span>
-                <span>App de tarefas (To-Do)</span>
+              <div class="welcome-suggestion" onclick="useSuggestion('Dashboard administrativo com sidebar, tabelas filtráveis, gráficos e cards de métricas')">
+                <span class="suggestion-icon">&#128200;</span>
+                <span>Dashboard admin completo</span>
               </div>
-              <div class="welcome-suggestion" onclick="useSuggestion('Chat em tempo real com salas, autenticacao e notificacoes')">
-                <span class="suggestion-icon">&#128172;</span>
-                <span>Chat em tempo real</span>
+              <div class="welcome-suggestion" onclick="useSuggestion('Sistema de agendamento para clientes com calendário, cadastro e painel de gestão')">
+                <span class="suggestion-icon">&#128197;</span>
+                <span>Sistema de agendamento</span>
               </div>
             </div>
           </div>
         </div>
         <div class="chat-input-area">
+          <input type="file" id="fileInput"
+            accept="image/*,.py,.js,.ts,.tsx,.jsx,.json,.css,.html,.txt,.md,.yaml,.yml,.csv,.sql,.sh,.env,.toml,.cfg,.xml,.graphql,.prisma,.rs,.go,.java,.rb,.php,.swift,.kt,.dart"
+            style="display:none" multiple onchange="handleFileSelect(event)">
           <div class="chat-input-wrapper">
-            <textarea id="chatInput" placeholder="Descreva a aplicacao que quer criar..." rows="1"
+            <textarea id="chatInput" placeholder="Descreva a aplicacao que quer criar... (Ctrl+V para colar imagem)" rows="1"
               onkeydown="handleInputKey(event)" oninput="autoResize(this)"></textarea>
+            <div class="image-preview-bar" id="imagePreviewBar">
+              <img class="image-preview-thumb" id="imagePreviewThumb" src="" alt="">
+              <span class="image-preview-name" id="imagePreviewName"></span>
+              <span class="image-preview-badge">&#128247; Visão ativa</span>
+              <button class="image-preview-clear" onclick="clearImage()" title="Remover imagem">&times;</button>
+            </div>
+            <div class="file-chips-bar" id="fileChipsBar"></div>
             <div class="chat-controls">
               <div class="chat-controls-left">
                 <select id="languageSelect">
@@ -318,6 +350,7 @@
                   <option value="python">Python</option>
                   <option value="vanilla">HTML + CSS + JS</option>
                 </select>
+                <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Anexar imagem ou arquivo (imagens, código, texto)">&#128206;</button>
                 <span class="kbd-hint">
                   <span class="kbd">Enter</span> enviar
                 </span>
@@ -330,10 +363,10 @@
         </div>
       </div>
 
-      <!-- File Tree -->
-      <div class="file-tree-section" id="fileTreeSection" style="display:none;">
-        <div class="file-tree-header">
-          <span>Explorer</span>
+      <!-- Explorer Tab Content -->
+      <div class="left-tab-content" id="contentExplorer" style="display:none;">
+        <div class="explorer-header">
+          <span>Arquivos</span>
           <div style="display:flex;align-items:center;gap:8px;">
             <span class="file-count" id="fileCount"></span>
             <button class="download-btn" id="downloadBtn" onclick="downloadProject()" title="Baixar projeto como ZIP" style="display:none;">&#8595; ZIP</button>
@@ -362,6 +395,33 @@
 
   </div>
 
+  <!-- =============== ASSISTANT =============== -->
+  <div class="assistant-overlay" id="assistantOverlay" onclick="closeAssistant()"></div>
+  <div class="assistant-panel" id="assistantPanel">
+    <div class="assistant-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="color:var(--accent-purple);">✦</span>
+        <span>Assistente</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="assistant-clear-btn" onclick="clearAssistantChat()">Limpar</button>
+        <button class="assistant-close-btn" onclick="closeAssistant()">&times;</button>
+      </div>
+    </div>
+    <div class="assistant-messages" id="assistantMessages">
+      <div class="assistant-welcome">
+        Olá! Pode me perguntar qualquer coisa — dúvidas técnicas, estratégia de negócio, precificação de projetos, escolha de tecnologias, ou qualquer outro assunto relevante para você como dev autônomo.
+      </div>
+    </div>
+    <div class="assistant-input-area">
+      <div class="assistant-input-wrapper">
+        <textarea id="assistantInput" placeholder="Pergunte qualquer coisa..." rows="1"
+          onkeydown="handleAssistantKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="assistant-send-btn" id="assistantSendBtn" onclick="sendAssistantMessage()">&#10148;</button>
+      </div>
+    </div>
+  </div>
+
   <!-- =============== GITHUB =============== -->
   <div class="github-overlay" id="githubOverlay" onclick="closeGithub()"></div>
   <div class="github-panel" id="githubPanel">
@@ -373,6 +433,69 @@
     </div>
     <div class="github-body" id="githubBody">
       <!-- conteudo injetado por JS -->
+    </div>
+  </div>
+
+  <!-- =============== SETTINGS =============== -->
+  <div class="settings-overlay" id="settingsOverlay" onclick="closeSettings()"></div>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span>&#9881;</span>
+        <span>Configurações</span>
+      </div>
+      <button class="settings-close-btn" onclick="closeSettings()">&times;</button>
+    </div>
+    <div class="settings-body">
+
+      <!-- Aparência -->
+      <div class="settings-section">
+        <div class="settings-section-title">Aparência</div>
+        <div class="theme-grid" id="themeGrid">
+          <div class="theme-option active" data-theme="green" onclick="applyTheme('green')">
+            <span class="theme-dot" style="background:linear-gradient(135deg,#337418,#5dd62c)"></span>
+            Terminal Green
+          </div>
+          <div class="theme-option" data-theme="dark" onclick="applyTheme('dark')">
+            <span class="theme-dot" style="background:linear-gradient(135deg,#161b22,#58a6ff)"></span>
+            GitHub Dark
+          </div>
+          <div class="theme-option" data-theme="mocha" onclick="applyTheme('mocha')">
+            <span class="theme-dot" style="background:linear-gradient(135deg,#1e1e2e,#cba6f7)"></span>
+            Catppuccin Mocha
+          </div>
+          <div class="theme-option" data-theme="dracula" onclick="applyTheme('dracula')">
+            <span class="theme-dot" style="background:linear-gradient(135deg,#282a36,#bd93f9)"></span>
+            Dracula
+          </div>
+          <div class="theme-option" data-theme="light" onclick="applyTheme('light')">
+            <span class="theme-dot" style="background:linear-gradient(135deg,#f6f8fa,#0969da)"></span>
+            Light
+          </div>
+        </div>
+      </div>
+
+      <!-- Instruções do agente -->
+      <div class="settings-section">
+        <div class="settings-section-title">Instruções para o Agente</div>
+        <div class="settings-label">Instruções adicionais de programação</div>
+        <textarea class="settings-textarea" id="settingsAgentInstructions" placeholder="Ex: Sempre use TypeScript strict mode. Prefira TailwindCSS. Adicione comentários em português. Siga o padrão de commits Conventional Commits..."></textarea>
+        <div class="settings-hint">Essas instruções são adicionadas ao prompt do agente em todas as criações e modificações de projetos.</div>
+      </div>
+
+      <!-- Memória / Contexto -->
+      <div class="settings-section">
+        <div class="settings-section-title">Memória do Assistente</div>
+        <div class="settings-label">Contexto pessoal (sempre enviado ao assistente)</div>
+        <textarea class="settings-textarea" id="settingsAssistantMemory" placeholder="Ex: Sou dev freelancer brasileiro especializado em web. Atendo clientes de pequenos negócios. Prefiro soluções simples e rápidas de entregar..."></textarea>
+        <div class="settings-hint">Esse contexto é incluído em todas as conversas com o Assistente, para respostas mais personalizadas.</div>
+      </div>
+
+      <div>
+        <button class="settings-save-btn" id="settingsSaveBtn" onclick="saveSettings()">Salvar configurações</button>
+        <div class="settings-saved-msg" id="settingsSavedMsg"></div>
+      </div>
+
     </div>
   </div>
 
@@ -404,6 +527,22 @@
     </div>
   </footer>
 
+  <!-- =============== MOBILE CODE VIEWER =============== -->
+  <div class="mobile-code-overlay" id="mobileCodeOverlay" onclick="closeMobileCode()"></div>
+  <div class="mobile-code-sheet" id="mobileCodeSheet">
+    <div class="mobile-code-header">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+        <span class="mobile-code-icon" id="mobileCodeIcon"></span>
+        <span class="mobile-code-title" id="mobileCodeTitle"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="mobile-copy-btn" id="mobileCopyBtn" onclick="copyMobileCode()">Copiar</button>
+        <button class="mobile-code-close" onclick="closeMobileCode()">&times;</button>
+      </div>
+    </div>
+    <div class="mobile-code-body" id="mobileCodeBody"></div>
+  </div>
+
   <!-- =============== TOASTS =============== -->
   <div class="toast-container" id="toastContainer"></div>
 
@@ -415,14 +554,57 @@
     let activeTab = null;
     let isLoading = false;
     let collapsedFolders = new Set(JSON.parse(localStorage.getItem('collapsedFolders') || '[]'));
+    let selectedImageB64 = null;
+    let selectedImageMime = null;
+    let attachedFiles = []; // [{name, content, size}]
+    const MAX_FILE_TEXT_CHARS = 30000; // truncate at 30KB per text file
+    const MAX_ATTACHED_FILES = 6;
 
     // =============== INIT ===============
+    const LANG_LABELS = {
+      'react': 'React JS', 'react-ts': 'React TS',
+      'python': 'Python', 'vanilla': 'HTML/CSS/JS'
+    };
+
     window.addEventListener('DOMContentLoaded', () => {
       loadDailyUsage();
+      loadAiInfo();
       initResize();
+      applyTheme(localStorage.getItem('theme') || 'green');
+      loadSettingsFromServer();
       if (currentProjectId) {
         loadProject(currentProjectId);
       }
+
+      // Registro do service worker (PWA)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+      }
+
+      // Paste de imagem no textarea do chat
+      document.getElementById('chatInput').addEventListener('paste', (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            e.preventDefault();
+            const blob = item.getAsFile();
+            if (!blob) continue;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const dataUrl = ev.target.result;
+              selectedImageB64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+              selectedImageMime = item.type;
+              document.getElementById('imagePreviewThumb').src = dataUrl;
+              document.getElementById('imagePreviewName').textContent = 'Imagem colada';
+              document.getElementById('imagePreviewBar').classList.add('visible');
+              showToast('Imagem colada — pronta para enviar');
+            };
+            reader.readAsDataURL(blob);
+            break;
+          }
+        }
+      });
     });
 
     // =============== TOASTS ===============
@@ -522,34 +704,101 @@
 
       input.value = '';
       input.style.height = 'auto';
-      addChatMessage('user', message);
+
+      const imgB64 = selectedImageB64;
+      const imgMime = selectedImageMime;
+      const imgThumbSrc = imgB64 ? `data:${imgMime};base64,${imgB64}` : null;
+      const files = attachedFiles.length ? [...attachedFiles] : null;
+      clearImage();
+      clearAttachedFiles();
+
+      addChatMessage('user', message, { imageSrc: imgThumbSrc, attachedFiles: files });
 
       if (currentProjectId) {
-        await sendChatMessage(message);
+        await sendChatMessage(message, imgB64, imgMime, files);
       } else {
-        await createProject(message);
+        await createProject(message, imgB64, imgMime, files);
       }
     }
 
-    function addChatMessage(role, content) {
+    function addChatMessage(role, content, meta = {}) {
       const container = document.getElementById('chatMessages');
       const welcome = document.getElementById('chatWelcome');
       if (welcome) welcome.remove();
 
-      const div = document.createElement('div');
-      div.className = `chat-message ${role}`;
+      if (role === 'assistant') {
+        const card = document.createElement('div');
+        card.className = 'ai-card';
 
-      const label = document.createElement('div');
-      label.className = 'msg-label';
-      label.textContent = role === 'user' ? 'Voce' : 'AI Agent';
-      div.appendChild(label);
+        const header = document.createElement('div');
+        header.className = 'ai-card-header';
+        header.innerHTML = `
+          <span class="ai-card-icon">✦</span>
+          <span class="ai-card-title">AI Agent</span>
+          <span class="ai-card-badge">${escapeHtml(meta.badge || 'Resposta')}</span>`;
+        card.appendChild(header);
 
-      const text = document.createElement('div');
-      text.style.whiteSpace = 'pre-wrap';
-      text.textContent = content;
-      div.appendChild(text);
+        const body = document.createElement('div');
+        body.className = 'ai-card-body';
+        body.textContent = content;
+        card.appendChild(body);
 
-      container.appendChild(div);
+        if (meta.files != null || meta.tokens != null) {
+          const footer = document.createElement('div');
+          footer.className = 'ai-card-footer';
+          if (meta.files != null)
+            footer.innerHTML += `<span class="ai-card-stat blue">📁 ${meta.files} arquivo${meta.files !== 1 ? 's' : ''}</span>`;
+          if (meta.language)
+            footer.innerHTML += `<span class="ai-card-stat">${escapeHtml(meta.language)}</span>`;
+          if (meta.tokens != null)
+            footer.innerHTML += `<span class="ai-card-stat">${meta.tokens.toLocaleString('pt-BR')} tokens</span>`;
+          if (meta.cost != null) {
+            const cls = meta.cost === 0 ? 'green' : '';
+            footer.innerHTML += `<span class="ai-card-stat ${cls}">R$ ${meta.cost.toFixed(4)}</span>`;
+          }
+          if (meta.path) {
+            footer.innerHTML += `<span class="ai-card-stat green" title="${escapeHtml(meta.path)}">📂 Salvo em disco</span>`;
+          }
+          card.appendChild(footer);
+        }
+
+        container.appendChild(card);
+      } else {
+        const div = document.createElement('div');
+        div.className = 'chat-message user';
+
+        const label = document.createElement('div');
+        label.className = 'msg-label';
+        label.textContent = 'Você';
+        div.appendChild(label);
+
+        if (meta.imageSrc) {
+          const img = document.createElement('img');
+          img.src = meta.imageSrc;
+          img.style.cssText = 'max-width:100%;max-height:160px;border-radius:6px;margin-bottom:6px;display:block;object-fit:contain;';
+          div.appendChild(img);
+        }
+
+        const text = document.createElement('div');
+        text.style.whiteSpace = 'pre-wrap';
+        text.textContent = content;
+        div.appendChild(text);
+
+        if (meta.attachedFiles && meta.attachedFiles.length) {
+          const chips = document.createElement('div');
+          chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;';
+          meta.attachedFiles.forEach(f => {
+            const chip = document.createElement('span');
+            chip.className = 'file-chip';
+            chip.innerHTML = `<span class="file-chip-icon">${getFileIcon(f.name)}</span><span class="file-chip-name">${escapeHtml(f.name)}</span>`;
+            chips.appendChild(chip);
+          });
+          div.appendChild(chips);
+        }
+
+        container.appendChild(div);
+      }
+
       container.scrollTop = container.scrollHeight;
     }
 
@@ -568,21 +817,97 @@
       if (el) el.remove();
     }
 
+    // =============== FILE / IMAGE ATTACH ===============
+    function handleFileSelect(event) {
+      const files = Array.from(event.target.files);
+      event.target.value = '';
+      files.forEach(processFile);
+    }
+
+    function processFile(file) {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target.result;
+          selectedImageB64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+          selectedImageMime = file.type || 'image/jpeg';
+          document.getElementById('imagePreviewThumb').src = dataUrl;
+          document.getElementById('imagePreviewName').textContent = file.name;
+          document.getElementById('imagePreviewBar').classList.add('visible');
+        };
+        reader.readAsDataURL(file);
+      } else {
+        if (attachedFiles.length >= MAX_ATTACHED_FILES) {
+          showToast(`Máximo de ${MAX_ATTACHED_FILES} arquivos por mensagem`, 'error');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          let content = e.target.result;
+          const truncated = content.length > MAX_FILE_TEXT_CHARS;
+          if (truncated) content = content.slice(0, MAX_FILE_TEXT_CHARS);
+          attachedFiles.push({ name: file.name, content, truncated, size: file.size });
+          renderFileChips();
+          if (truncated) showToast(`${file.name}: truncado em 30KB`, 'error');
+        };
+        reader.readAsText(file);
+      }
+    }
+
+    function clearImage() {
+      selectedImageB64 = null;
+      selectedImageMime = null;
+      document.getElementById('imagePreviewThumb').src = '';
+      document.getElementById('imagePreviewName').textContent = '';
+      document.getElementById('imagePreviewBar').classList.remove('visible');
+    }
+
+    function removeAttachedFile(idx) {
+      attachedFiles.splice(idx, 1);
+      renderFileChips();
+    }
+
+    function clearAttachedFiles() {
+      attachedFiles = [];
+      renderFileChips();
+    }
+
+    function renderFileChips() {
+      const bar = document.getElementById('fileChipsBar');
+      if (!attachedFiles.length) { bar.classList.remove('visible'); bar.innerHTML = ''; return; }
+      bar.classList.add('visible');
+      bar.innerHTML = attachedFiles.map((f, i) => {
+        const kb = (f.size / 1024).toFixed(0);
+        const icon = getFileIcon(f.name);
+        return `<div class="file-chip">
+          <span class="file-chip-icon">${icon}</span>
+          <span class="file-chip-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <span class="file-chip-size">${kb}KB${f.truncated ? '*' : ''}</span>
+          <button class="file-chip-remove" onclick="removeAttachedFile(${i})" title="Remover">&times;</button>
+        </div>`;
+      }).join('');
+    }
+
+
     // =============== API CALLS ===============
-    async function createProject(description) {
+    async function createProject(description, imageb64 = null, imageMime = null, files = null) {
       isLoading = true;
       const btn = document.getElementById('sendBtn');
       btn.disabled = true;
       showTypingIndicator();
-      setStatus('Gerando projeto...', true);
+      const hasExtras = imageb64 || (files && files.length);
+      setStatus(hasExtras ? 'Gerando projeto com contexto...' : 'Gerando projeto...', true);
 
       const language = document.getElementById('languageSelect').value;
 
       try {
+        const body = { description, language, mobile: isMobile() };
+        if (imageb64) { body.image_b64 = imageb64; body.image_mime = imageMime; }
+        if (files && files.length) body.attached_files = files.map(f => ({ name: f.name, content: f.content }));
         const res = await fetch('/project/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description, language })
+          body: JSON.stringify(body)
         });
         const data = await res.json();
 
@@ -597,13 +922,24 @@
         projectFiles = data.files || {};
 
         document.getElementById('projectName').textContent = data.project_name;
+        setStackBadge(language);
+        document.getElementById('downloadBtn').style.display = 'flex';
         updateDailyUsage(data.daily_tokens, data.daily_cost);
 
         const numFiles = Object.keys(projectFiles).length;
-        addChatMessage('assistant', `Projeto "${data.project_name}" criado com ${numFiles} arquivos.`);
-        showToast(`Projeto criado com ${numFiles} arquivos`);
+        const msg = data.assistant_msg || `Projeto "${data.project_name}" criado com ${numFiles} arquivos.`;
+        addChatMessage('assistant', msg, {
+          badge: 'Projeto criado',
+          files: numFiles,
+          language: LANG_LABELS[language] || language,
+          tokens: data.tokens_used,
+          cost: data.cost_used,
+          path: data.output_path
+        });
+        showToast(`Projeto criado — ${numFiles} arquivos`);
 
         renderFileTree(projectFiles);
+        switchLeftTab('explorer');
         openFirstFile();
 
       } catch (err) {
@@ -617,18 +953,22 @@
       }
     }
 
-    async function sendChatMessage(message) {
+    async function sendChatMessage(message, imageb64 = null, imageMime = null, files = null) {
       isLoading = true;
       const btn = document.getElementById('sendBtn');
       btn.disabled = true;
       showTypingIndicator();
-      setStatus('Processando...', true);
+      const hasExtras = imageb64 || (files && files.length);
+      setStatus(hasExtras ? 'Processando com contexto...' : 'Processando...', true);
 
       try {
+        const body = { message, mobile: isMobile() };
+        if (imageb64) { body.image_b64 = imageb64; body.image_mime = imageMime; }
+        if (files && files.length) body.attached_files = files.map(f => ({ name: f.name, content: f.content }));
         const res = await fetch(`/project/${currentProjectId}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message })
+          body: JSON.stringify(body)
         });
         const data = await res.json();
 
@@ -643,13 +983,22 @@
 
         const updatedCount = Object.keys(data.updated_files || {}).length;
         const deletedCount = (data.deleted_files || []).length;
-        let msg = `Atualizado ${updatedCount} arquivo(s)`;
-        if (deletedCount > 0) msg += `, removido ${deletedCount}`;
-        msg += '.';
-        addChatMessage('assistant', msg);
-        showToast(msg);
+        const fallback = `Atualizado ${updatedCount} arquivo(s)${deletedCount > 0 ? `, removido ${deletedCount}` : ''}.`;
+        const msg = data.assistant_msg || fallback;
+        addChatMessage('assistant', msg, {
+          badge: 'Modificação aplicada',
+          files: updatedCount,
+          tokens: data.req_tokens,
+          cost: data.req_cost,
+          path: data.output_path
+        });
+        showToast(`${updatedCount} arquivo(s) atualizado(s)`);
 
         renderFileTree(projectFiles, Object.keys(data.updated_files || {}));
+
+        if (Object.keys(data.updated_files || {}).length > 0) {
+          document.getElementById('explorerBadge').style.display = 'inline-block';
+        }
 
         if (activeTab && data.updated_files && data.updated_files[activeTab]) {
           displayFile(activeTab);
@@ -690,16 +1039,19 @@
 
         if (data.language) {
           document.getElementById('languageSelect').value = data.language;
+          setStackBadge(data.language);
         }
+        document.getElementById('downloadBtn').style.display = 'flex';
 
         // Restore chat
         const container = document.getElementById('chatMessages');
         container.innerHTML = '';
         (data.conversation || []).forEach(msg => {
-          addChatMessage(msg.role, msg.content);
+          addChatMessage(msg.role, msg.content, msg.role === 'assistant' ? { badge: 'Histórico' } : {});
         });
 
         renderFileTree(projectFiles);
+        switchLeftTab('explorer');
         openFirstFile();
 
         // Close history
@@ -722,32 +1074,34 @@
       activeTab = null;
 
       document.getElementById('projectName').textContent = 'Nenhum projeto';
+      document.getElementById('stackBadge').style.display = 'none';
+      document.getElementById('downloadBtn').style.display = 'none';
+      switchLeftTab('chat');
       document.getElementById('chatMessages').innerHTML = `
         <div class="chat-welcome" id="chatWelcome">
           <div class="welcome-icon">&#9672;</div>
           <div class="welcome-title">AI Code Agent</div>
           <div class="welcome-subtitle">Descreva a aplicacao que deseja criar e eu gero o projeto completo para voce.</div>
           <div class="welcome-suggestions">
-            <div class="welcome-suggestion" onclick="useSuggestion('Dashboard de analytics com graficos e tabela de dados')">
-              <span class="suggestion-icon">&#128202;</span>
-              <span>Dashboard de analytics</span>
+            <div class="welcome-suggestion" onclick="useSuggestion('API REST com autenticação JWT, CRUD completo e documentação Swagger')">
+              <span class="suggestion-icon">&#128279;</span>
+              <span>API REST com autenticação JWT</span>
             </div>
-            <div class="welcome-suggestion" onclick="useSuggestion('E-commerce com carrinho de compras, listagem de produtos e checkout')">
-              <span class="suggestion-icon">&#128722;</span>
-              <span>E-commerce com carrinho</span>
+            <div class="welcome-suggestion" onclick="useSuggestion('Landing page profissional com hero, features, pricing e formulário de contato')">
+              <span class="suggestion-icon">&#127760;</span>
+              <span>Landing page profissional</span>
             </div>
-            <div class="welcome-suggestion" onclick="useSuggestion('App de tarefas com categorias, filtros e drag-and-drop')">
-              <span class="suggestion-icon">&#9745;</span>
-              <span>App de tarefas (To-Do)</span>
+            <div class="welcome-suggestion" onclick="useSuggestion('Dashboard administrativo com sidebar, tabelas filtráveis, gráficos e cards de métricas')">
+              <span class="suggestion-icon">&#128200;</span>
+              <span>Dashboard admin completo</span>
             </div>
-            <div class="welcome-suggestion" onclick="useSuggestion('Chat em tempo real com salas, autenticacao e notificacoes')">
-              <span class="suggestion-icon">&#128172;</span>
-              <span>Chat em tempo real</span>
+            <div class="welcome-suggestion" onclick="useSuggestion('Sistema de agendamento para clientes com calendário, cadastro e painel de gestão')">
+              <span class="suggestion-icon">&#128197;</span>
+              <span>Sistema de agendamento</span>
             </div>
           </div>
         </div>
       `;
-      document.getElementById('fileTreeSection').style.display = 'none';
       document.getElementById('tabBar').innerHTML = '';
       document.getElementById('breadcrumbBar').innerHTML = '';
       document.getElementById('codeViewer').innerHTML = `
@@ -758,6 +1112,57 @@
         </div>
       `;
       setStatusFile(null);
+    }
+
+    function switchLeftTab(tab) {
+      const isChat = tab === 'chat';
+      document.getElementById('tabChat').classList.toggle('active', isChat);
+      document.getElementById('tabExplorer').classList.toggle('active', !isChat);
+      document.getElementById('contentChat').style.display = isChat ? 'flex' : 'none';
+      document.getElementById('contentExplorer').style.display = isChat ? 'none' : 'flex';
+      if (!isChat) document.getElementById('explorerBadge').style.display = 'none';
+    }
+
+    function setStackBadge(language) {
+      const badge = document.getElementById('stackBadge');
+      const label = LANG_LABELS[language] || language;
+      badge.textContent = label;
+      badge.style.display = label ? 'inline-flex' : 'none';
+    }
+
+    async function downloadProject() {
+      if (!currentProjectId) return;
+      const btn = document.getElementById('downloadBtn');
+      btn.textContent = '...';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/project/${currentProjectId}/download`);
+        if (!res.ok) { showToast('Erro ao gerar ZIP', 'error'); return; }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'projeto.zip';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Download iniciado');
+      } catch (e) {
+        showToast('Erro ao baixar projeto', 'error');
+      } finally {
+        btn.innerHTML = '&#8595; ZIP';
+        btn.disabled = false;
+      }
+    }
+
+    async function loadAiInfo() {
+      try {
+        const res = await fetch('/ai/info');
+        const data = await res.json();
+        const el = document.getElementById('modelName');
+        const indicator = document.getElementById('modelIndicator');
+        el.textContent = `${data.provider_label} · ${data.model}`;
+        indicator.style.display = 'flex';
+      } catch (e) {}
     }
 
     function updateDailyUsage(dailyTokens, dailyCost) {
@@ -795,8 +1200,6 @@
     }
 
     function renderFileTree(files, updatedPaths = []) {
-      const section = document.getElementById('fileTreeSection');
-      section.style.display = 'block';
       const container = document.getElementById('fileTree');
       container.innerHTML = '';
 
@@ -905,6 +1308,10 @@
 
     // =============== TABS & CODE VIEWER ===============
     function openFile(filePath) {
+      if (isMobile()) {
+        openMobileCode(filePath);
+        return;
+      }
       if (!openTabs.includes(filePath)) {
         openTabs.push(filePath);
       }
@@ -1160,6 +1567,124 @@
       }
     }
 
+    // =============== ASSISTANT ===============
+    let assistantHistory = [];
+    let assistantLoading = false;
+
+    function toggleAssistant() {
+      const panel = document.getElementById('assistantPanel');
+      const overlay = document.getElementById('assistantOverlay');
+      const isOpen = panel.classList.contains('open');
+      if (isOpen) {
+        closeAssistant();
+      } else {
+        panel.classList.add('open');
+        overlay.classList.add('open');
+        document.getElementById('assistantBtn').classList.add('active');
+        setTimeout(() => document.getElementById('assistantInput').focus(), 260);
+      }
+    }
+
+    function closeAssistant() {
+      document.getElementById('assistantPanel').classList.remove('open');
+      document.getElementById('assistantOverlay').classList.remove('open');
+      document.getElementById('assistantBtn').classList.remove('active');
+    }
+
+    function clearAssistantChat() {
+      assistantHistory = [];
+      const msgs = document.getElementById('assistantMessages');
+      msgs.innerHTML = `<div class="assistant-welcome">
+        Conversa reiniciada. Pode me perguntar qualquer coisa!
+      </div>`;
+    }
+
+    function handleAssistantKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendAssistantMessage();
+      }
+    }
+
+    function addAssistantMsg(role, content) {
+      const msgs = document.getElementById('assistantMessages');
+      const div = document.createElement('div');
+      div.className = `assistant-msg ${role}`;
+
+      const label = document.createElement('div');
+      label.className = 'assistant-msg-label';
+      label.textContent = role === 'user' ? 'Você' : 'Assistente';
+      div.appendChild(label);
+
+      const text = document.createElement('div');
+      text.textContent = content;
+      div.appendChild(text);
+
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    function showAssistantTyping() {
+      const msgs = document.getElementById('assistantMessages');
+      const div = document.createElement('div');
+      div.className = 'assistant-typing';
+      div.id = 'assistantTyping';
+      div.innerHTML = '<span></span><span></span><span></span>';
+      msgs.appendChild(div);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    function hideAssistantTyping() {
+      const el = document.getElementById('assistantTyping');
+      if (el) el.remove();
+    }
+
+    async function sendAssistantMessage() {
+      const input = document.getElementById('assistantInput');
+      const message = input.value.trim();
+      if (!message || assistantLoading) return;
+
+      input.value = '';
+      input.style.height = 'auto';
+      assistantLoading = true;
+      document.getElementById('assistantSendBtn').disabled = true;
+
+      assistantHistory.push({ role: 'user', content: message });
+      addAssistantMsg('user', message);
+      showAssistantTyping();
+
+      try {
+        const res = await fetch('/chat/general', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: assistantHistory })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          hideAssistantTyping();
+          addAssistantMsg('ai', 'Erro: ' + data.error);
+          assistantHistory.pop();
+          return;
+        }
+
+        hideAssistantTyping();
+        assistantHistory.push({ role: 'assistant', content: data.response });
+        addAssistantMsg('ai', data.response);
+        updateDailyUsage(null, null);
+        loadDailyUsage();
+
+      } catch (e) {
+        hideAssistantTyping();
+        addAssistantMsg('ai', 'Erro de conexão com o servidor.');
+        assistantHistory.pop();
+      } finally {
+        assistantLoading = false;
+        document.getElementById('assistantSendBtn').disabled = false;
+        input.focus();
+      }
+    }
+
     // =============== GITHUB ===============
     let ghRepos = [];
     let ghSelectedRepo = null;
@@ -1366,6 +1891,121 @@
         <div class="github-error">${escapeHtml(msg)}</div>
         <button class="github-back-btn" onclick="renderGithubRepos()" style="margin-top:12px;">Tentar novamente</button>
       `;
+    }
+
+    // =============== MOBILE ===============
+    function isMobile() {
+      return window.innerWidth < 768 || /Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(navigator.userAgent);
+    }
+
+    let _mobileActiveFile = null;
+
+    function openMobileCode(filePath) {
+      const file = projectFiles[filePath];
+      if (!file) return;
+      _mobileActiveFile = filePath;
+      const name = filePath.split('/').pop();
+      document.getElementById('mobileCodeIcon').textContent = getFileIcon(name);
+      document.getElementById('mobileCodeTitle').textContent = filePath;
+      const body = document.getElementById('mobileCodeBody');
+      body.innerHTML = `<pre style="margin:0;padding:16px;min-height:100%;background:var(--bg-primary);"><code class="language-${mapLanguage(file.language || '')}">${escapeHtml(file.content || '')}</code></pre>`;
+      Prism.highlightAll();
+      document.getElementById('mobileCodeOverlay').classList.add('open');
+      document.getElementById('mobileCodeSheet').classList.add('open');
+      const copyBtn = document.getElementById('mobileCopyBtn');
+      copyBtn.textContent = 'Copiar';
+      copyBtn.classList.remove('copied');
+    }
+
+    function closeMobileCode() {
+      document.getElementById('mobileCodeOverlay').classList.remove('open');
+      document.getElementById('mobileCodeSheet').classList.remove('open');
+      _mobileActiveFile = null;
+    }
+
+    function copyMobileCode() {
+      if (!_mobileActiveFile) return;
+      const file = projectFiles[_mobileActiveFile];
+      if (!file) return;
+      navigator.clipboard.writeText(file.content || '').then(() => {
+        const btn = document.getElementById('mobileCopyBtn');
+        btn.textContent = 'Copiado!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copiar'; btn.classList.remove('copied'); }, 2000);
+      });
+    }
+
+    // =============== SETTINGS ===============
+    function toggleSettings() {
+      const panel = document.getElementById('settingsPanel');
+      if (panel.classList.contains('open')) {
+        closeSettings();
+      } else {
+        panel.classList.add('open');
+        document.getElementById('settingsOverlay').classList.add('open');
+        document.getElementById('settingsBtn').classList.add('active');
+      }
+    }
+
+    function closeSettings() {
+      document.getElementById('settingsPanel').classList.remove('open');
+      document.getElementById('settingsOverlay').classList.remove('open');
+      document.getElementById('settingsBtn').classList.remove('active');
+    }
+
+    function applyTheme(theme) {
+      const html = document.documentElement;
+      if (theme === 'dark') {
+        html.removeAttribute('data-theme');
+      } else {
+        html.setAttribute('data-theme', theme);
+      }
+      localStorage.setItem('theme', theme);
+      document.querySelectorAll('.theme-option').forEach(el => {
+        el.classList.toggle('active', el.dataset.theme === theme);
+      });
+    }
+
+    async function loadSettingsFromServer() {
+      try {
+        const res = await fetch('/settings');
+        const data = await res.json();
+        if (data.agent_instructions != null)
+          document.getElementById('settingsAgentInstructions').value = data.agent_instructions;
+        if (data.assistant_memory != null)
+          document.getElementById('settingsAssistantMemory').value = data.assistant_memory;
+      } catch (e) {}
+    }
+
+    async function saveSettings() {
+      const btn = document.getElementById('settingsSaveBtn');
+      const msg = document.getElementById('settingsSavedMsg');
+      btn.disabled = true;
+      msg.textContent = '';
+
+      const payload = {
+        agent_instructions: document.getElementById('settingsAgentInstructions').value.trim(),
+        assistant_memory: document.getElementById('settingsAssistantMemory').value.trim()
+      };
+
+      try {
+        const res = await fetch('/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.success) {
+          msg.textContent = 'Configurações salvas!';
+          setTimeout(() => { msg.textContent = ''; }, 3000);
+        }
+      } catch (e) {
+        msg.style.color = 'var(--accent-red)';
+        msg.textContent = 'Erro ao salvar.';
+        setTimeout(() => { msg.textContent = ''; msg.style.color = 'var(--accent-green)'; }, 3000);
+      } finally {
+        btn.disabled = false;
+      }
     }
 
     // =============== KEYBOARD SHORTCUTS ===============

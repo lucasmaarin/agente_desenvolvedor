@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 import os
 import io
 import zipfile
+import pathlib
 import json
 import re
 import base64
@@ -22,8 +23,17 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
 
 # ===============================
 # Firebase / Firestore
+# Suporta credenciais via arquivo (local) ou JSON em variável de ambiente (Render/cloud)
 # ===============================
-cred = credentials.Certificate(os.getenv('FIREBASE_CREDENTIALS', 'automacoes-royal-x.json'))
+_fb_json_str = os.getenv('FIREBASE_CREDENTIALS_JSON')
+if _fb_json_str:
+    # Render / produção: JSON completo como variável de ambiente
+    _fb_dict = json.loads(_fb_json_str)
+    cred = credentials.Certificate(_fb_dict)
+else:
+    # Local: caminho para o arquivo JSON
+    cred = credentials.Certificate(os.getenv('FIREBASE_CREDENTIALS', 'automacoes-royal-x.json'))
+
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
@@ -58,20 +68,25 @@ SKIP_EXTENSIONS = {
     '.pyc', '.pyo', '.exe', '.dll', '.so', '.bin'
 }
 
-GITHUB_EDIT_PROMPT = """You are an expert software engineer. The user wants to make changes to files in a GitHub repository.
+GITHUB_EDIT_PROMPT = """You are a precise software engineer making targeted changes to a GitHub repository.
 
-Given the file contents and the user's instruction, return ONLY a valid JSON object (no markdown, no extra text):
+Analyze the provided files and the instruction carefully. Make exactly the changes needed — no more, no less.
+
+Return ONLY a valid JSON object (no markdown, no extra text):
 {
-  "commit_message": "type(scope): brief description of changes",
+  "commit_message": "type(scope): concise description in imperative mood",
   "updated_files": {
     "path/to/file.ext": "complete new file content as string"
   }
 }
 
 Rules:
-- Only include files that actually need to change.
-- Return the COMPLETE content of each changed file (not diffs or partial content).
+- Only include files that actually need to change. Do not touch unrelated files.
+- Return the COMPLETE, working content of each changed file — not diffs, not partial content.
+- Preserve the existing code style, naming conventions, and patterns of each file.
+- If a change in one file requires a corresponding change in another, include both.
 - Use conventional commits: feat / fix / refactor / style / docs / chore / test.
+- Never introduce bugs, remove existing functionality, or add unrequested features.
 - If no changes are needed, return updated_files as an empty object {}."""
 
 
@@ -81,6 +96,62 @@ def gh_headers():
         'Accept': 'application/vnd.github.v3+json',
         'Content-Type': 'application/json'
     }
+
+# ===============================
+# Escrita de projetos em disco
+# ===============================
+_default_output = str(pathlib.Path.home() / "Desktop" / "projetos-agente")
+PROJECTS_OUTPUT_DIR = os.getenv("PROJECTS_OUTPUT_DIR", _default_output)
+
+# Modelo de visão (usado quando o usuário envia uma imagem)
+VISION_MODEL = os.getenv("VISION_MODEL", "llama-3.2-11b-vision-preview")
+
+
+def _sanitize_name(name: str) -> str:
+    return re.sub(r'[<>:"/\\|?*]', '-', name).strip()
+
+
+def write_project_to_disk(project_name: str, files: dict) -> str | None:
+    if not PROJECTS_OUTPUT_DIR:
+        return None
+    try:
+        base = pathlib.Path(PROJECTS_OUTPUT_DIR) / _sanitize_name(project_name)
+        base.mkdir(parents=True, exist_ok=True)
+        for rel_path, info in files.items():
+            target = base / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(info.get("content", ""), encoding="utf-8")
+        return str(base)
+    except Exception:
+        return None
+
+
+def update_files_on_disk(project_name: str, updated: dict, deleted: list) -> str | None:
+    if not PROJECTS_OUTPUT_DIR:
+        return None
+    try:
+        base = pathlib.Path(PROJECTS_OUTPUT_DIR) / _sanitize_name(project_name)
+        if not base.exists():
+            return None
+        for rel_path, info in updated.items():
+            target = base / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(info.get("content", ""), encoding="utf-8")
+        for rel_path in deleted:
+            target = base / rel_path
+            if target.exists():
+                target.unlink()
+        return str(base)
+    except Exception:
+        return None
+
+
+# ===============================
+# Limites de contexto (evita erro 413 no Groq free tier)
+# ===============================
+MAX_FILES_GITHUB   = 12      # máx arquivos lidos no GitHub
+MAX_FILE_CHARS     = 2500    # máx chars por arquivo
+MAX_CONTEXT_CHARS  = 18000   # orçamento total de chars de contexto
 
 # ===============================
 # Controle de custos
@@ -169,78 +240,122 @@ Architecture guidelines:
 }
 
 JSON_FORMAT_INSTRUCTION = """
-Return your response as a single JSON object (no markdown fences, no extra text).
+OUTPUT: a single raw JSON object. No markdown fences, no text before or after, no explanation.
 
-The JSON format MUST be:
 {
   "project_name": "short-kebab-case-name",
-  "folder_structure": "A visual tree string using unicode box-drawing characters (├──, └──, │)",
-  "summary": "Resumo em português (4-6 frases) explicando: qual tipo de aplicação foi criada, a arquitetura escolhida e por quê, os arquivos mais importantes e o que cada um faz, e como rodar o projeto.",
+  "folder_structure": "Visual tree using ├──, └──, │",
+  "summary": "Resumo em português (4-6 frases): tipo de aplicação, decisões arquiteturais e motivação, arquivos mais importantes e seus papéis, como instalar e rodar.",
   "files": {
-    "relative/path/to/file.ext": {
-      "content": "full file content as a string",
-      "language": "programming language identifier"
+    "relative/path/file.ext": {
+      "content": "complete file content",
+      "language": "identifier"
     }
   }
 }
 
-Rules:
-- Generate complete, working, production-quality code.
-- Include ALL necessary config files.
-- Include helpful comments in the code explaining the logic.
-- The "language" field should be one of: python, javascript, typescript, tsx, jsx, json, css, html, markdown, yaml, text, bash.
-- The "summary" field must always be in Brazilian Portuguese.
-- Return ONLY the JSON. No explanation before or after."""
+CODE QUALITY RULES — these are non-negotiable:
+- Every function, method, and handler must be FULLY IMPLEMENTED. No `// TODO`, no `pass`, no `raise NotImplementedError`, no placeholder logic, no "add your code here" comments.
+- Write code that runs immediately after `npm install` / `pip install -r requirements.txt` / opening index.html — zero manual edits required.
+- Well-named identifiers communicate what the code does. Only add a comment when the WHY is genuinely non-obvious: a hidden constraint, a workaround for a specific bug, a subtle invariant. Never comment the obvious.
+- No multi-line docstrings that just restate the function name.
+- Validate at system boundaries (user input, external API responses, file I/O). Do not add defensive checks for things internal code guarantees.
+- Security by default: parameterized queries, output escaping, no secrets in code, descriptive-but-safe error messages.
+- Include every required config file: package.json, tsconfig.json, requirements.txt, .env.example, .gitignore, etc.
+- "language" values: python, javascript, typescript, tsx, jsx, json, css, html, markdown, yaml, bash, text.
+- "summary" must always be in Brazilian Portuguese."""
 
 CHAT_JSON_FORMAT = """
-Return a JSON object with ONLY the files that changed or were added:
+OUTPUT: a single raw JSON object. No markdown, no text before or after.
+
 {{
   "updated_files": {{
-    "relative/path/to/changed_file.ext": {{
-      "content": "full new content of the file",
-      "language": "tsx"
+    "relative/path/file.ext": {{
+      "content": "complete new file content",
+      "language": "identifier"
     }}
   }},
-  "deleted_files": ["path/to/removed/file.ext"],
-  "folder_structure": "updated full visual tree string",
-  "summary": "Resumo em português (3-5 frases) explicando: o que foi alterado e por quê, quais arquivos foram modificados/criados/removidos e o impacto da mudança, e se há algo importante que o desenvolvedor precisa saber (dependências, breaking changes, próximos passos sugeridos)."
+  "deleted_files": ["path/to/removed.ext"],
+  "folder_structure": "updated visual tree",
+  "summary": "Resumo em português (3-5 frases): o que mudou e por quê, quais arquivos foram afetados, impacto no projeto, e qualquer passo que o dev precisa executar (instalar dependência, variável de ambiente nova, etc.)."
 }}
 
-Rules:
-- Return the COMPLETE content of each changed file, not diffs.
-- If no files were deleted, use an empty array.
-- Always include the updated folder_structure reflecting any structural changes.
-- The "summary" field must always be in Brazilian Portuguese.
-- Return ONLY valid JSON. No explanation before or after."""
+RULES:
+- Include ONLY files that actually changed. Do not re-send unchanged files.
+- Return the COMPLETE content of every changed file — not a diff, not a partial snippet.
+- If a change in one file requires updating another (e.g., you rename a function, update all its callers), include both files.
+- Fully implement every change. No stubs, no TODOs, no placeholder bodies.
+- Maintain the existing code style, naming conventions, and patterns of the project.
+- deleted_files: empty array [] if nothing was deleted.
+- summary must always be in Brazilian Portuguese."""
 
 
 def get_create_prompt(language):
     arch_guide = ARCHITECTURE_GUIDES.get(language, ARCHITECTURE_GUIDES["react"])
-    return f"""You are an expert software architect and full-stack developer.
-The user will describe an application they want to build. You must:
+    custom = load_settings().get('agent_instructions', '').strip()
+    extra = f"\n\nDeveloper custom instructions (apply to every project, without exception):\n{custom}" if custom else ""
+    return f"""You are an elite software engineer. Your job is to build complete, production-ready applications from a description — not prototypes, not demos, not templates.
 
-1. Design a complete project folder structure following professional software architecture patterns.
-2. Generate the FULL source code for EVERY file in that structure.
+## How you work
 
-{arch_guide}
+You think like a senior engineer who has shipped this exact type of app before:
+1. Read the description carefully and identify what the user actually needs.
+2. Choose the right architecture for the scale and complexity implied — not over-engineered, not under-built.
+3. Generate every file in the project with complete, working code.
+
+## What "complete" means
+
+Every file you generate must be immediately runnable. This means:
+- Every function has a real implementation. No `// TODO`, no `pass`, no `throw new Error("not implemented")`.
+- All imports are correct and point to real modules.
+- All environment variables have corresponding `.env.example` entries.
+- Configuration files (package.json, tsconfig.json, requirements.txt, .gitignore) are included and correct.
+- The project works right after `npm install && npm run dev`, or `pip install -r requirements.txt && python main.py`, or opening index.html — no manual edits required.
+
+## Code quality
+
+- Name things clearly. The name explains what it does; a comment only explains why when it's non-obvious.
+- No comment blocks restating what the code does. No "// This function handles authentication" above `function handleAuth()`.
+- Error handling at the edges: HTTP handlers, file I/O, external API calls. Don't wrap internal calls that can't fail.
+- Security: validate user input, escape outputs, use parameterized queries, never expose stack traces to clients.
+- Build exactly what was described. No hypothetical future features, no premature abstractions.
+
+{arch_guide}{extra}
 
 {JSON_FORMAT_INSTRUCTION}"""
 
 
 def get_chat_prompt(language, project_name, files_context, conversation):
     arch_guide = ARCHITECTURE_GUIDES.get(language, ARCHITECTURE_GUIDES["react"])
-    return f"""You are an expert software architect modifying an existing project.
+    custom = load_settings().get('agent_instructions', '').strip()
+    extra = f"\n\nDeveloper custom instructions (apply to every change, without exception):\n{custom}" if custom else ""
+    return f"""You are operating as a code editor with full knowledge of an existing project. Your task is to apply the requested changes — precisely and completely.
 
-Project: {project_name}
-{arch_guide}
+## Project: {project_name}
 
-Current files:
+## How you work
+
+1. Read the existing files carefully. Understand every pattern, naming convention, and architectural decision already in place.
+2. Identify the minimal set of changes needed to fulfill the request.
+3. Make those changes — nothing more. Don't refactor code you weren't asked to change.
+
+## Rules for every change
+
+- **Targeted**: only modify files that must change. Don't re-send files that are identical to what's already there.
+- **Complete**: return the full content of every file you touch — not a diff, not a partial snippet, not pseudocode.
+- **Consistent**: match the existing naming conventions, import style, file structure, and code patterns exactly.
+- **Coherent**: if you change a function signature, update every caller. If you add a route, wire it into the router. If you add a component, import it where needed. Incomplete changes that would break the build are not acceptable.
+- **Fully implemented**: every new or modified function has a real body. No stubs, no TODOs, no placeholder returns.
+- **Non-destructive**: never silently remove existing functionality while adding new functionality.
+
+{arch_guide}{extra}
+
+## Current codebase
 {files_context}
 
-Conversation history:
+## Conversation so far
 {conversation}
 
-The user wants to make changes. Follow the same architecture patterns already established in the project.
 {CHAT_JSON_FORMAT}"""
 
 
@@ -251,10 +366,37 @@ def parse_ai_json(text):
     return json.loads(cleaned)
 
 
-def call_ai(messages, max_retries=2):
+def _build_attached_files_block(attached_files: list) -> str:
+    if not attached_files:
+        return ""
+    parts = ["\n\nArquivos enviados pelo usuário (use como referência ou contexto para a tarefa):"]
+    budget = MAX_CONTEXT_CHARS
+    for f in attached_files:
+        if budget <= 0:
+            parts.append(f"\n--- {f.get('name', 'arquivo')} --- [omitido: limite de contexto]")
+            continue
+        content = f.get('content', '')[:MAX_FILE_CHARS]
+        entry = f"\n--- {f.get('name', 'arquivo')} ---\n{content}\n--- fim ---"
+        parts.append(entry)
+        budget -= len(entry)
+    return "\n".join(parts)
+
+
+def build_vision_message(text: str, image_b64: str, image_mime: str = "image/jpeg") -> dict:
+    return {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": text},
+            {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{image_b64}"}}
+        ]
+    }
+
+
+def call_ai(messages, max_retries=2, model: str | None = None):
+    use_model = model or AI_MODEL
     for attempt in range(max_retries + 1):
         response = client.chat.completions.create(
-            model=AI_MODEL,
+            model=use_model,
             messages=messages
         )
         content = response.choices[0].message.content
@@ -271,8 +413,15 @@ def call_ai(messages, max_retries=2):
 
 def build_files_context(files):
     parts = []
+    budget = MAX_CONTEXT_CHARS
     for path, info in files.items():
-        parts.append(f"--- {path} ---\n{info.get('content', '')}\n")
+        if budget <= 0:
+            parts.append(f"--- {path} --- [omitido: limite de contexto atingido]\n")
+            continue
+        content = info.get('content', '')[:MAX_FILE_CHARS]
+        entry = f"--- {path} ---\n{content}\n"
+        parts.append(entry)
+        budget -= len(entry)
     return "\n".join(parts)
 
 
@@ -347,6 +496,18 @@ def home():
     return render_template('index.html')
 
 
+@app.route('/manifest.json')
+def pwa_manifest():
+    return send_file('static/manifest.json', mimetype='application/manifest+json')
+
+
+@app.route('/sw.js')
+def service_worker():
+    resp = send_file('static/sw.js', mimetype='application/javascript')
+    resp.headers['Service-Worker-Allowed'] = '/'
+    return resp
+
+
 @app.route('/usage/today', methods=['GET'])
 def usage_today():
     return jsonify(get_daily_usage())
@@ -368,17 +529,26 @@ def create_project():
         "vanilla": "HTML + CSS + JavaScript"
     }
     lang_label = lang_labels.get(language, language)
-    user_msg = f"Build this application using {lang_label}:\n\n{description}"
+    image_b64 = data.get('image_b64')
+    image_mime = data.get('image_mime', 'image/jpeg')
+    attached_files = data.get('attached_files', [])  # [{name, content}]
+
+    image_instruction = "\n\nThe user provided a reference image. Replicate the visual design, layout and structure shown in the image as closely as possible." if image_b64 else ""
+    files_block = _build_attached_files_block(attached_files)
+    user_msg = f"Build this application using {lang_label}:\n\n{description}{image_instruction}{files_block}"
 
     system_prompt = get_create_prompt(language)
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_msg}
-    ]
+    if image_b64:
+        user_content = build_vision_message(user_msg, image_b64, image_mime)
+        messages = [{"role": "system", "content": system_prompt}, user_content]
+        use_model = VISION_MODEL
+    else:
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+        use_model = None
 
     try:
-        parsed, usage = call_ai(messages)
+        parsed, usage = call_ai(messages, model=use_model)
     except Exception as e:
         return jsonify({"error": f"Erro ao gerar projeto: {str(e)}"}), 500
 
@@ -407,6 +577,10 @@ def create_project():
     doc_ref = projects_collection().document()
     doc_ref.set(project_data)
 
+    # Escrever arquivos em disco (pulado em mobile)
+    is_mobile = data.get('mobile', False)
+    output_path = None if is_mobile else write_project_to_disk(project_name, parsed.get("files", {}))
+
     # Salvar mensagens na subcoleção messages
     now = datetime.utcnow().isoformat()
     messages_ref = doc_ref.collection("messages")
@@ -427,6 +601,7 @@ def create_project():
         "files": project_data["files"],
         "conversation": conversation,
         "assistant_msg": assistant_msg,
+        "output_path": output_path,
         "tokens_used": tokens_used,
         "cost_used": cost,
         "daily_tokens": daily["tokens"],
@@ -477,6 +652,9 @@ def chat_project(project_id):
     project = doc.to_dict()
     req_data = request.get_json()
     user_message = req_data.get('message', '').strip()
+    image_b64 = req_data.get('image_b64')
+    image_mime = req_data.get('image_mime', 'image/jpeg')
+    attached_files = req_data.get('attached_files', [])  # [{name, content}]
 
     if not user_message:
         return jsonify({"error": "Digite uma mensagem."}), 400
@@ -499,13 +677,20 @@ def chat_project(project_id):
         conversation=conversation_context
     )
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message}
-    ]
+    files_block = _build_attached_files_block(attached_files)
+    full_message = user_message + files_block
+
+    if image_b64:
+        image_note = "\n\nThe user provided a reference image. Apply the visual design/layout shown in the image to the relevant files."
+        user_content = build_vision_message(full_message + image_note, image_b64, image_mime)
+        messages = [{"role": "system", "content": system_prompt}, user_content]
+        use_model = VISION_MODEL
+    else:
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": full_message}]
+        use_model = None
 
     try:
-        parsed, usage = call_ai(messages)
+        parsed, usage = call_ai(messages, model=use_model)
     except Exception as e:
         return jsonify({"error": f"Erro ao processar: {str(e)}"}), 500
 
@@ -534,6 +719,11 @@ def chat_project(project_id):
         default_msg += f" Removido {len(deleted_files)} arquivo(s)."
     assistant_msg = parsed.get("summary") or default_msg
 
+    # Atualizar arquivos em disco (pulado em mobile)
+    is_mobile = req_data.get('mobile', False)
+    project_name_disk = project.get("project_name", "projeto")
+    output_path = None if is_mobile else update_files_on_disk(project_name_disk, updated_files, deleted_files)
+
     # Salvar mensagens na subcoleção
     now = datetime.utcnow().isoformat()
     messages_ref = doc_ref.collection("messages")
@@ -561,6 +751,7 @@ def chat_project(project_id):
         "files": current_files,
         "conversation": conversation_list,
         "assistant_msg": assistant_msg,
+        "output_path": output_path,
         "req_tokens": req_tokens,
         "req_cost": req_cost,
         "tokens_used": tokens_used,
@@ -699,11 +890,14 @@ def github_ai_edit(owner, repo):
             and not any(item["path"].lower().endswith(ext) for ext in SKIP_EXTENSIONS)
             and 'node_modules/' not in item["path"]
         ]
-        file_paths = file_paths[:30]
+        file_paths = file_paths[:MAX_FILES_GITHUB]
 
-    # Busca conteúdo de cada arquivo
+    # Busca conteúdo de cada arquivo com limite de chars
     files_content = {}
+    budget = MAX_CONTEXT_CHARS
     for path in file_paths:
+        if budget <= 0:
+            break
         file_res = http.get(
             f'{GITHUB_API}/repos/{owner}/{repo}/contents/{path}',
             params={'ref': branch},
@@ -711,8 +905,10 @@ def github_ai_edit(owner, repo):
         )
         if file_res.status_code == 200:
             try:
-                content = base64.b64decode(file_res.json()['content']).decode('utf-8', errors='replace')
+                raw = base64.b64decode(file_res.json()['content']).decode('utf-8', errors='replace')
+                content = raw[:MAX_FILE_CHARS]
                 files_content[path] = content
+                budget -= len(content)
             except Exception:
                 pass
 
@@ -729,7 +925,10 @@ def github_ai_edit(owner, repo):
     try:
         parsed, usage = call_ai(messages)
     except Exception as e:
-        return jsonify({"error": f"Erro ao processar com IA: {str(e)}"}), 500
+        err = str(e)
+        if '413' in err or 'too large' in err.lower() or 'rate_limit' in err.lower():
+            return jsonify({"error": "Contexto muito grande para o modelo. Selecione menos arquivos ou arquivos menores e tente novamente."}), 413
+        return jsonify({"error": f"Erro ao processar com IA: {err}"}), 500
 
     tokens_used, cost = get_tokens_and_cost(usage)
     track_daily_usage(tokens_used, cost)
@@ -823,6 +1022,54 @@ def github_ai_edit(owner, repo):
 
 
 # ===============================
+# Chat Geral (sem contexto de projeto)
+# ===============================
+GENERAL_CHAT_SYSTEM = """Você é um assistente direto e experiente para um desenvolvedor autônomo brasileiro. Responda sempre em português.
+
+Seu interlocutor: dev que usa IA para acelerar entregas, atende clientes, vive de código. Não precisa de introduções longas nem de ressalvas óbvias.
+
+Você ajuda com qualquer coisa relevante:
+- Decisões técnicas e arquitetura — dê uma recomendação concreta, não uma lista de opções sem conclusão
+- Negócios freelancer — precificação real, como estruturar proposta, como negociar, como posicionar serviço
+- Escolha de ferramentas — diga qual usar e por quê, sem ficar listando todas as alternativas
+- Produtividade — o que realmente funciona para dev solo com entregas constantes
+- Qualquer outra dúvida técnica, comercial ou estratégica
+
+Como responder:
+- Seja direto: dê a resposta primeiro, explique depois se necessário
+- Seja concreto: números, exemplos reais, não generalidades
+- Seja breve: se cabe em 3 linhas, não use 10
+- Dê uma opinião quando perguntado — "depende" sem sugerir o caminho mais provável não ajuda ninguém
+- Quando a pergunta for técnica e tiver uma resposta objetivamente melhor, dê essa resposta"""
+
+
+@app.route('/chat/general', methods=['POST'])
+def chat_general():
+    data = request.get_json()
+    history = data.get('messages', [])
+
+    if not history:
+        return jsonify({"error": "Sem mensagens."}), 400
+
+    memory = load_settings().get('assistant_memory', '').strip()
+    system_content = GENERAL_CHAT_SYSTEM
+    if memory:
+        system_content += f"\n\nContexto do desenvolvedor (sempre leve em conta):\n{memory}"
+
+    try:
+        response = client.chat.completions.create(
+            model=AI_MODEL,
+            messages=[{"role": "system", "content": system_content}] + history
+        )
+        reply = response.choices[0].message.content
+        tokens, cost = get_tokens_and_cost(response.usage)
+        track_daily_usage(tokens, cost)
+        return jsonify({"response": reply, "tokens": tokens, "cost": cost})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ===============================
 # Download do projeto como ZIP
 # ===============================
 @app.route('/project/<project_id>/download', methods=['GET'])
@@ -848,6 +1095,49 @@ def download_project(project_id):
         as_attachment=True,
         download_name=f"{project_name}.zip"
     )
+
+
+# ===============================
+# Configurações do usuário (salvas em settings.json)
+# ===============================
+SETTINGS_FILE = pathlib.Path(__file__).parent / 'settings.json'
+
+
+def load_settings() -> dict:
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_settings(settings: dict):
+    with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
+
+
+@app.route('/settings', methods=['GET'])
+def get_settings():
+    return jsonify(load_settings())
+
+
+@app.route('/settings', methods=['POST'])
+def post_settings():
+    data = request.get_json()
+    settings = load_settings()
+    settings.update(data)
+    _save_settings(settings)
+    return jsonify({'success': True})
+
+
+# ===============================
+# Configuração de diretório de saída (mantido para compatibilidade)
+# ===============================
+@app.route('/settings/output-dir', methods=['GET'])
+def get_output_dir():
+    return jsonify({"dir": PROJECTS_OUTPUT_DIR})
 
 
 # ===============================

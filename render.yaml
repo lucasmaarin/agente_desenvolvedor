@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ai-code-agent
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn main:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: AI_PROVIDER
+        value: local
+      - key: LOCAL_AI_URL
+        value: https://api.groq.com/openai/v1
+      - key: LOCAL_AI_MODEL
+        value: llama-3.3-70b-versatile
+      - key: VISION_MODEL
+        value: llama-3.2-11b-vision-preview
+      # Defina esses segredos no painel do Render (não coloque valores aqui):
+      - key: LOCAL_AI_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: FLASK_SECRET_KEY
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
+      # Deixe vazio no Render (sem disco para escrita de arquivos):
+      - key: PROJECTS_OUTPUT_DIR
+        value: ""
