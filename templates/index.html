@@ -276,9 +276,6 @@
       <span class="stack-badge" id="stackBadge" style="display:none;"></span>
     </div>
     <div class="topbar-right">
-      <span class="daily-usage" title="Uso de hoje">
-        Hoje: <strong id="dailyTokensDisplay">0</strong> tokens &middot; R$ <strong id="dailyCostDisplay">0.00</strong>
-      </span>
       <button class="topbar-btn" onclick="toggleAssistant()" id="assistantBtn">&#10022; Assistente</button>
       <button class="topbar-btn" onclick="toggleSettings()" id="settingsBtn">&#9881; Config</button>
       <button class="topbar-btn" onclick="toggleGithub()">GitHub</button>
@@ -354,6 +351,7 @@
                   <option value="vanilla">HTML + CSS + JS</option>
                 </select>
                 <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Anexar imagem ou arquivo (imagens, código, texto)">&#128206;</button>
+                <button class="mic-btn" id="micBtn" onclick="toggleVoice()" title="Falar">&#127908;</button>
                 <span class="kbd-hint">
                   <span class="kbd">Enter</span> enviar
                 </span>
@@ -705,6 +703,7 @@
       const message = input.value.trim();
       if (!message || isLoading) return;
 
+      stopVoice();
       input.value = '';
       input.style.height = 'auto';
 
@@ -1894,6 +1893,75 @@
         <div class="github-error">${escapeHtml(msg)}</div>
         <button class="github-back-btn" onclick="renderGithubRepos()" style="margin-top:12px;">Tentar novamente</button>
       `;
+    }
+
+    // =============== VOICE INPUT ===============
+    let recognition = null;
+    let isRecording = false;
+    let voiceBaseText = '';
+    let voiceFinalText = '';
+
+    function toggleVoice() {
+      if (isRecording) {
+        stopVoice();
+      } else {
+        startVoice();
+      }
+    }
+
+    function startVoice() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        showToast('Voz não suportada neste navegador. Use Chrome ou Edge.', 'error');
+        return;
+      }
+
+      const input = document.getElementById('chatInput');
+      const btn = document.getElementById('micBtn');
+      voiceBaseText = input.value ? input.value + ' ' : '';
+      voiceFinalText = '';
+
+      recognition = new SR();
+      recognition.lang = 'pt-BR';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        isRecording = true;
+        btn.classList.add('recording');
+        btn.title = 'Parar gravação';
+      };
+
+      recognition.onresult = (e) => {
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) {
+            voiceFinalText += e.results[i][0].transcript + ' ';
+          } else {
+            interim += e.results[i][0].transcript;
+          }
+        }
+        input.value = voiceBaseText + voiceFinalText + interim;
+        autoResize(input);
+      };
+
+      recognition.onerror = (e) => {
+        if (e.error !== 'no-speech') showToast('Erro no microfone: ' + e.error, 'error');
+        stopVoice();
+      };
+
+      recognition.onend = () => {
+        if (isRecording) recognition.start();
+      };
+
+      recognition.start();
+    }
+
+    function stopVoice() {
+      isRecording = false;
+      const btn = document.getElementById('micBtn');
+      if (btn) { btn.classList.remove('recording'); btn.title = 'Falar'; }
+      if (recognition) { recognition.stop(); recognition = null; }
     }
 
     // =============== MOBILE ===============
