@@ -52,7 +52,7 @@ body {
 
 /* =============== TOP BAR =============== */
 .topbar {
-    height: 48px;
+    height: 60px;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
     display: flex;
@@ -72,8 +72,8 @@ body {
 }
 
 .topbar-left .copilot-icon {
-    width: 42px;
-    height: 42px;
+    width: 52px;
+    height: 52px;
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
@@ -431,17 +431,14 @@ body {
 }
 
 .chat-welcome .welcome-icon {
-    width: 56px;
-    height: 56px;
-    background: linear-gradient(135deg, #6e40c9, #58a6ff);
-    border-radius: 16px;
+    width: 80px;
+    height: 80px;
+    border-radius: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
-    margin-bottom: 16px;
-    box-shadow: 0 4px 16px rgba(110, 64, 201, 0.3);
-    color: #fff;
+    margin: 0 auto 16px;
+    overflow: hidden;
 }
 
 .chat-welcome .welcome-title {
@@ -2094,8 +2091,8 @@ body {
     background: linear-gradient(135deg, #5dd62c, #337418) !important;
 }
 [data-theme="green"] .welcome-icon {
-    background: linear-gradient(135deg, #337418, #5dd62c) !important;
-    box-shadow: 0 4px 16px rgba(93, 214, 44, 0.2) !important;
+    background: transparent !important;
+    box-shadow: none !important;
 }
 [data-theme="green"] .empty-icon {
     background: linear-gradient(135deg, rgba(93, 214, 44, 0.08), rgba(51, 116, 24, 0.04)) !important;

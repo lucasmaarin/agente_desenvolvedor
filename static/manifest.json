@@ -1,6 +1,6 @@
 {
-  "name": "AI Code Agent",
-  "short_name": "Code Agent",
+  "name": "Arauto Code",
+  "short_name": "Arauto Code",
   "description": "Agente de programação com IA — gera projetos completos a partir de uma descrição",
   "start_url": "/",
   "display": "standalone",
@@ -10,7 +10,13 @@
   "icons": [
     {
       "src": "/static/img/logo.png",
-      "sizes": "any",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/img/logo.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }
