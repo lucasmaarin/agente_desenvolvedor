@@ -515,98 +515,102 @@ def usage_today():
 
 @app.route('/project/create', methods=['POST'])
 def create_project():
-    data = request.get_json()
-    description = data.get('description', '').strip()
-    language = data.get('language', 'react')
-
-    if not description:
-        return jsonify({"error": "Descreva a aplicação que deseja criar."}), 400
-
-    lang_labels = {
-        "react": "React (JavaScript)",
-        "react-ts": "React with TypeScript",
-        "python": "Python",
-        "vanilla": "HTML + CSS + JavaScript"
-    }
-    lang_label = lang_labels.get(language, language)
-    image_b64 = data.get('image_b64')
-    image_mime = data.get('image_mime', 'image/jpeg')
-    attached_files = data.get('attached_files', [])  # [{name, content}]
-
-    image_instruction = "\n\nThe user provided a reference image. Replicate the visual design, layout and structure shown in the image as closely as possible." if image_b64 else ""
-    files_block = _build_attached_files_block(attached_files)
-    user_msg = f"Build this application using {lang_label}:\n\n{description}{image_instruction}{files_block}"
-
-    system_prompt = get_create_prompt(language)
-
-    if image_b64:
-        user_content = build_vision_message(user_msg, image_b64, image_mime)
-        messages = [{"role": "system", "content": system_prompt}, user_content]
-        use_model = VISION_MODEL
-    else:
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
-        use_model = None
-
     try:
+        data = request.get_json()
+        description = data.get('description', '').strip()
+        language = data.get('language', 'react')
+
+        if not description:
+            return jsonify({"error": "Descreva a aplicação que deseja criar."}), 400
+
+        lang_labels = {
+            "react": "React (JavaScript)",
+            "react-ts": "React with TypeScript",
+            "python": "Python",
+            "vanilla": "HTML + CSS + JavaScript"
+        }
+        lang_label = lang_labels.get(language, language)
+        image_b64 = data.get('image_b64')
+        image_mime = data.get('image_mime', 'image/jpeg')
+        attached_files = data.get('attached_files', [])
+
+        image_instruction = "\n\nThe user provided a reference image. Replicate the visual design, layout and structure shown in the image as closely as possible." if image_b64 else ""
+        files_block = _build_attached_files_block(attached_files)
+        user_msg = f"Build this application using {lang_label}:\n\n{description}{image_instruction}{files_block}"
+
+        system_prompt = get_create_prompt(language)
+
+        if image_b64:
+            user_content = build_vision_message(user_msg, image_b64, image_mime)
+            messages = [{"role": "system", "content": system_prompt}, user_content]
+            use_model = VISION_MODEL
+        else:
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_msg}]
+            use_model = None
+
         parsed, usage = call_ai(messages, model=use_model)
+
+        tokens_used, cost = get_tokens_and_cost(usage)
+        try:
+            track_daily_usage(tokens_used, cost)
+        except Exception:
+            pass
+
+        project_name = parsed.get("project_name", "meu-projeto")
+        num_files = len(parsed.get("files", {}))
+        default_msg = f"Projeto '{project_name}' criado com {num_files} arquivos usando {lang_label}."
+        assistant_msg = parsed.get("summary") or default_msg
+
+        project_data = {
+            "project_name": project_name,
+            "description": description,
+            "language": language,
+            "folder_structure": parsed.get("folder_structure", ""),
+            "files": parsed.get("files", {}),
+            "tokens_used": tokens_used,
+            "cost_used": cost,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+
+        doc_ref = projects_collection().document()
+        doc_ref.set(project_data)
+
+        is_mobile = data.get('mobile', False)
+        output_path = None if is_mobile else write_project_to_disk(project_name, parsed.get("files", {}))
+
+        now = datetime.utcnow().isoformat()
+        messages_ref = doc_ref.collection("messages")
+        messages_ref.add({"role": "user", "content": description, "timestamp": now})
+        messages_ref.add({"role": "assistant", "content": assistant_msg, "timestamp": now})
+
+        conversation = [
+            {"role": "user", "content": description},
+            {"role": "assistant", "content": assistant_msg}
+        ]
+
+        try:
+            daily = get_daily_usage()
+        except Exception:
+            daily = {"tokens": 0, "cost": 0}
+
+        return jsonify({
+            "project_id": doc_ref.id,
+            "project_name": project_data["project_name"],
+            "folder_structure": project_data["folder_structure"],
+            "files": project_data["files"],
+            "conversation": conversation,
+            "assistant_msg": assistant_msg,
+            "output_path": output_path,
+            "tokens_used": tokens_used,
+            "cost_used": cost,
+            "daily_tokens": daily["tokens"],
+            "daily_cost": daily["cost"]
+        })
+
     except Exception as e:
-        return jsonify({"error": f"Erro ao gerar projeto: {str(e)}"}), 500
-
-    tokens_used, cost = get_tokens_and_cost(usage)
-
-    # Tracking diário
-    track_daily_usage(tokens_used, cost)
-
-    project_name = parsed.get("project_name", "meu-projeto")
-    num_files = len(parsed.get("files", {}))
-    default_msg = f"Projeto '{project_name}' criado com {num_files} arquivos usando {lang_label}."
-    assistant_msg = parsed.get("summary") or default_msg
-
-    project_data = {
-        "project_name": project_name,
-        "description": description,
-        "language": language,
-        "folder_structure": parsed.get("folder_structure", ""),
-        "files": parsed.get("files", {}),
-        "tokens_used": tokens_used,
-        "cost_used": cost,
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat()
-    }
-
-    doc_ref = projects_collection().document()
-    doc_ref.set(project_data)
-
-    # Escrever arquivos em disco (pulado em mobile)
-    is_mobile = data.get('mobile', False)
-    output_path = None if is_mobile else write_project_to_disk(project_name, parsed.get("files", {}))
-
-    # Salvar mensagens na subcoleção messages
-    now = datetime.utcnow().isoformat()
-    messages_ref = doc_ref.collection("messages")
-    messages_ref.add({"role": "user", "content": description, "timestamp": now})
-    messages_ref.add({"role": "assistant", "content": assistant_msg, "timestamp": now})
-
-    conversation = [
-        {"role": "user", "content": description},
-        {"role": "assistant", "content": assistant_msg}
-    ]
-
-    daily = get_daily_usage()
-
-    return jsonify({
-        "project_id": doc_ref.id,
-        "project_name": project_data["project_name"],
-        "folder_structure": project_data["folder_structure"],
-        "files": project_data["files"],
-        "conversation": conversation,
-        "assistant_msg": assistant_msg,
-        "output_path": output_path,
-        "tokens_used": tokens_used,
-        "cost_used": cost,
-        "daily_tokens": daily["tokens"],
-        "daily_cost": daily["cost"]
-    })
+        app.logger.error(f"create_project error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/project/<project_id>', methods=['GET'])
@@ -644,121 +648,122 @@ def get_project(project_id):
 
 @app.route('/project/<project_id>/chat', methods=['POST'])
 def chat_project(project_id):
-    doc_ref = projects_collection().document(project_id)
-    doc = doc_ref.get()
-    if not doc.exists:
-        return jsonify({"error": "Projeto não encontrado."}), 404
-
-    project = doc.to_dict()
-    req_data = request.get_json()
-    user_message = req_data.get('message', '').strip()
-    image_b64 = req_data.get('image_b64')
-    image_mime = req_data.get('image_mime', 'image/jpeg')
-    attached_files = req_data.get('attached_files', [])  # [{name, content}]
-
-    if not user_message:
-        return jsonify({"error": "Digite uma mensagem."}), 400
-
-    # Ler histórico de mensagens da subcoleção
-    messages_docs = doc_ref.collection("messages").order_by("timestamp").stream()
-    conversation_list = []
-    for msg_doc in messages_docs:
-        msg = msg_doc.to_dict()
-        conversation_list.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
-
-    files_context = build_files_context(project.get("files", {}))
-    conversation_context = build_conversation_context(conversation_list)
-
-    language = project.get("language", "react")
-    system_prompt = get_chat_prompt(
-        language=language,
-        project_name=project.get("project_name", ""),
-        files_context=files_context,
-        conversation=conversation_context
-    )
-
-    files_block = _build_attached_files_block(attached_files)
-    full_message = user_message + files_block
-
-    if image_b64:
-        image_note = "\n\nThe user provided a reference image. Apply the visual design/layout shown in the image to the relevant files."
-        user_content = build_vision_message(full_message + image_note, image_b64, image_mime)
-        messages = [{"role": "system", "content": system_prompt}, user_content]
-        use_model = VISION_MODEL
-    else:
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": full_message}]
-        use_model = None
-
     try:
+        doc_ref = projects_collection().document(project_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            return jsonify({"error": "Projeto não encontrado."}), 404
+
+        project = doc.to_dict()
+        req_data = request.get_json()
+        user_message = req_data.get('message', '').strip()
+        image_b64 = req_data.get('image_b64')
+        image_mime = req_data.get('image_mime', 'image/jpeg')
+        attached_files = req_data.get('attached_files', [])
+
+        if not user_message:
+            return jsonify({"error": "Digite uma mensagem."}), 400
+
+        messages_docs = doc_ref.collection("messages").order_by("timestamp").stream()
+        conversation_list = []
+        for msg_doc in messages_docs:
+            msg = msg_doc.to_dict()
+            conversation_list.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+
+        files_context = build_files_context(project.get("files", {}))
+        conversation_context = build_conversation_context(conversation_list)
+
+        language = project.get("language", "react")
+        system_prompt = get_chat_prompt(
+            language=language,
+            project_name=project.get("project_name", ""),
+            files_context=files_context,
+            conversation=conversation_context
+        )
+
+        files_block = _build_attached_files_block(attached_files)
+        full_message = user_message + files_block
+
+        if image_b64:
+            image_note = "\n\nThe user provided a reference image. Apply the visual design/layout shown in the image to the relevant files."
+            user_content = build_vision_message(full_message + image_note, image_b64, image_mime)
+            messages = [{"role": "system", "content": system_prompt}, user_content]
+            use_model = VISION_MODEL
+        else:
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": full_message}]
+            use_model = None
+
         parsed, usage = call_ai(messages, model=use_model)
+
+        req_tokens, req_cost = get_tokens_and_cost(usage)
+        try:
+            track_daily_usage(req_tokens, req_cost)
+        except Exception:
+            pass
+
+        tokens_used = project.get("tokens_used", 0) + req_tokens
+        total_cost = round(project.get("cost_used", 0) + req_cost, 4)
+
+        current_files = project.get("files", {})
+        updated_files = parsed.get("updated_files", {})
+        deleted_files = parsed.get("deleted_files", [])
+
+        for path, file_info in updated_files.items():
+            current_files[path] = file_info
+        for path in deleted_files:
+            current_files.pop(path, None)
+
+        new_structure = parsed.get("folder_structure", project.get("folder_structure", ""))
+
+        default_msg = f"Atualizado {len(updated_files)} arquivo(s)."
+        if deleted_files:
+            default_msg += f" Removido {len(deleted_files)} arquivo(s)."
+        assistant_msg = parsed.get("summary") or default_msg
+
+        is_mobile = req_data.get('mobile', False)
+        project_name_disk = project.get("project_name", "projeto")
+        output_path = None if is_mobile else update_files_on_disk(project_name_disk, updated_files, deleted_files)
+
+        now = datetime.utcnow().isoformat()
+        messages_ref = doc_ref.collection("messages")
+        messages_ref.add({"role": "user", "content": user_message, "timestamp": now})
+        messages_ref.add({"role": "assistant", "content": assistant_msg, "timestamp": now})
+
+        doc_ref.update({
+            "files": current_files,
+            "folder_structure": new_structure,
+            "tokens_used": tokens_used,
+            "cost_used": total_cost,
+            "updated_at": now
+        })
+
+        conversation_list.append({"role": "user", "content": user_message})
+        conversation_list.append({"role": "assistant", "content": assistant_msg})
+
+        try:
+            daily = get_daily_usage()
+        except Exception:
+            daily = {"tokens": 0, "cost": 0}
+
+        return jsonify({
+            "folder_structure": new_structure,
+            "updated_files": updated_files,
+            "deleted_files": deleted_files,
+            "files": current_files,
+            "conversation": conversation_list,
+            "assistant_msg": assistant_msg,
+            "output_path": output_path,
+            "req_tokens": req_tokens,
+            "req_cost": req_cost,
+            "tokens_used": tokens_used,
+            "cost_used": total_cost,
+            "daily_tokens": daily["tokens"],
+            "daily_cost": daily["cost"]
+        })
+
     except Exception as e:
-        return jsonify({"error": f"Erro ao processar: {str(e)}"}), 500
-
-    req_tokens, req_cost = get_tokens_and_cost(usage)
-
-    # Tracking diário
-    track_daily_usage(req_tokens, req_cost)
-
-    tokens_used = project.get("tokens_used", 0) + req_tokens
-    total_cost = round(project.get("cost_used", 0) + req_cost, 4)
-
-    current_files = project.get("files", {})
-    updated_files = parsed.get("updated_files", {})
-    deleted_files = parsed.get("deleted_files", [])
-
-    for path, file_info in updated_files.items():
-        current_files[path] = file_info
-
-    for path in deleted_files:
-        current_files.pop(path, None)
-
-    new_structure = parsed.get("folder_structure", project.get("folder_structure", ""))
-
-    default_msg = f"Atualizado {len(updated_files)} arquivo(s)."
-    if deleted_files:
-        default_msg += f" Removido {len(deleted_files)} arquivo(s)."
-    assistant_msg = parsed.get("summary") or default_msg
-
-    # Atualizar arquivos em disco (pulado em mobile)
-    is_mobile = req_data.get('mobile', False)
-    project_name_disk = project.get("project_name", "projeto")
-    output_path = None if is_mobile else update_files_on_disk(project_name_disk, updated_files, deleted_files)
-
-    # Salvar mensagens na subcoleção
-    now = datetime.utcnow().isoformat()
-    messages_ref = doc_ref.collection("messages")
-    messages_ref.add({"role": "user", "content": user_message, "timestamp": now})
-    messages_ref.add({"role": "assistant", "content": assistant_msg, "timestamp": now})
-
-    doc_ref.update({
-        "files": current_files,
-        "folder_structure": new_structure,
-        "tokens_used": tokens_used,
-        "cost_used": total_cost,
-        "updated_at": now
-    })
-
-    # Retornar conversa atualizada
-    conversation_list.append({"role": "user", "content": user_message})
-    conversation_list.append({"role": "assistant", "content": assistant_msg})
-
-    daily = get_daily_usage()
-
-    return jsonify({
-        "folder_structure": new_structure,
-        "updated_files": updated_files,
-        "deleted_files": deleted_files,
-        "files": current_files,
-        "conversation": conversation_list,
-        "assistant_msg": assistant_msg,
-        "output_path": output_path,
-        "req_tokens": req_tokens,
-        "req_cost": req_cost,
-        "tokens_used": tokens_used,
-        "cost_used": total_cost,
-        "daily_tokens": daily["tokens"],
-        "daily_cost": daily["cost"]
-    })
+        app.logger.error(f"chat_project error: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/projects', methods=['GET'])

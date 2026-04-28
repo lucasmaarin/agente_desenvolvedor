@@ -7,7 +7,8 @@
       "Bash(\"c:\\\\Users\\\\lucas\\\\Desktop\\\\Automação\\\\Automacoes\\\\agente_programacao\\\\venv\\\\Scripts\\\\python.exe\" -m pip install firebase-admin)",
       "Bash(\"c:\\\\Users\\\\lucas\\\\Desktop\\\\Automação\\\\Automacoes\\\\agente_programacao\\\\venv\\\\Scripts\\\\python.exe\" -m pip install python-dotenv)",
       "Bash(python -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('main.py OK'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c ' *)"
     ]
   }
 }

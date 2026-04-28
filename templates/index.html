@@ -911,10 +911,11 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
         });
-        const data = await res.json();
+        let data;
+        try { data = await res.json(); } catch { data = { error: `Servidor retornou status ${res.status}` }; }
 
-        if (data.error) {
-          addChatMessage('assistant', 'Erro: ' + data.error);
+        if (!res.ok || data.error) {
+          addChatMessage('assistant', 'Erro: ' + (data.error || `HTTP ${res.status}`));
           showToast('Erro ao criar projeto', 'error');
           return;
         }
@@ -972,10 +973,11 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)
         });
-        const data = await res.json();
+        let data;
+        try { data = await res.json(); } catch { data = { error: `Servidor retornou status ${res.status}` }; }
 
-        if (data.error) {
-          addChatMessage('assistant', 'Erro: ' + data.error);
+        if (!res.ok || data.error) {
+          addChatMessage('assistant', 'Erro: ' + (data.error || `HTTP ${res.status}`));
           showToast('Erro ao processar', 'error');
           return;
         }
