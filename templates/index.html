@@ -281,6 +281,7 @@
       <button class="topbar-btn" onclick="toggleGithub()">GitHub</button>
       <button class="topbar-btn" id="historyBtn" onclick="toggleHistory()">Projetos</button>
       <button class="topbar-btn" id="newProjectBtn" onclick="newProject()">+ Novo</button>
+      <a href="/logout" class="topbar-btn" style="text-decoration:none;" title="Sair">&#x23CF;</a>
     </div>
   </header>
 
@@ -760,6 +761,12 @@
           }
           if (meta.path) {
             footer.innerHTML += `<span class="ai-card-stat green" title="${escapeHtml(meta.path)}">📂 Salvo em disco</span>`;
+          } else if (meta.files != null && currentProjectId) {
+            const dlBtn = document.createElement('button');
+            dlBtn.className = 'ai-card-zip-btn';
+            dlBtn.textContent = '⬇ Baixar ZIP';
+            dlBtn.onclick = downloadProject;
+            footer.appendChild(dlBtn);
           }
           card.appendChild(footer);
         }
@@ -924,9 +931,11 @@
         localStorage.setItem('projectId', currentProjectId);
         projectFiles = data.files || {};
 
-        document.getElementById('projectName').textContent = data.project_name;
+        const _pnEl = document.getElementById('projectName');
+        if (_pnEl) _pnEl.textContent = data.project_name;
         setStackBadge(language);
-        document.getElementById('downloadBtn').style.display = 'flex';
+        const _dlEl = document.getElementById('downloadBtn');
+        if (_dlEl) _dlEl.style.display = 'flex';
         updateDailyUsage(data.daily_tokens, data.daily_cost);
 
         const numFiles = Object.keys(projectFiles).length;
@@ -946,8 +955,10 @@
         openFirstFile();
 
       } catch (err) {
-        addChatMessage('assistant', 'Erro de conexao com o servidor.');
-        showToast('Falha na conexao', 'error');
+        const msg = err?.message || String(err) || 'desconhecido';
+        addChatMessage('assistant', `Erro JS: ${msg}`);
+        console.error('createProject catch:', err);
+        showToast('Falha', 'error');
       } finally {
         isLoading = false;
         btn.disabled = false;
@@ -1009,8 +1020,10 @@
         }
 
       } catch (err) {
-        addChatMessage('assistant', 'Erro de conexao com o servidor.');
-        showToast('Falha na conexao', 'error');
+        const msg = err?.message || String(err) || 'desconhecido';
+        addChatMessage('assistant', `Erro JS: ${msg}`);
+        console.error('sendChatMessage catch:', err);
+        showToast('Falha', 'error');
       } finally {
         isLoading = false;
         btn.disabled = false;
@@ -1038,14 +1051,17 @@
         openTabs = [];
         activeTab = null;
 
-        document.getElementById('projectName').textContent = data.project_name;
+        const _pnEl2 = document.getElementById('projectName');
+        if (_pnEl2) _pnEl2.textContent = data.project_name;
         updateDailyUsage(data.daily_tokens, data.daily_cost);
 
         if (data.language) {
-          document.getElementById('languageSelect').value = data.language;
+          const _ls = document.getElementById('languageSelect');
+          if (_ls) _ls.value = data.language;
           setStackBadge(data.language);
         }
-        document.getElementById('downloadBtn').style.display = 'flex';
+        const _dlEl2 = document.getElementById('downloadBtn');
+        if (_dlEl2) _dlEl2.style.display = 'flex';
 
         // Restore chat
         const container = document.getElementById('chatMessages');
@@ -1170,8 +1186,10 @@
     }
 
     function updateDailyUsage(dailyTokens, dailyCost) {
-      document.getElementById('dailyTokensDisplay').textContent = dailyTokens || 0;
-      document.getElementById('dailyCostDisplay').textContent = (dailyCost || 0).toFixed(2);
+      const tEl = document.getElementById('dailyTokensDisplay');
+      const cEl = document.getElementById('dailyCostDisplay');
+      if (tEl) tEl.textContent = dailyTokens || 0;
+      if (cEl) cEl.textContent = (dailyCost || 0).toFixed(2);
     }
 
     async function loadDailyUsage() {

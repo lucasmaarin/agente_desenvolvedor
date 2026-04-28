@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 import os
+from functools import wraps
 import io
 import zipfile
 import pathlib
@@ -19,7 +20,45 @@ load_dotenv()
 # Configuração Flask
 # ===============================
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-change-in-production')
+
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '')
+
+# Rotas que não precisam de login
+_PUBLIC_ENDPOINTS = {'login_page', 'login_post', 'logout', 'static', 'pwa_manifest', 'service_worker'}
+
+@app.before_request
+def require_login():
+    if not ADMIN_PASSWORD:
+        return
+    if request.endpoint in _PUBLIC_ENDPOINTS:
+        return
+    if session.get('authenticated'):
+        return
+    # Rotas de API retornam JSON 401
+    if request.is_json or request.path.startswith('/project') or \
+       request.path.startswith('/chat') or request.path.startswith('/github') or \
+       request.path.startswith('/settings') or request.path.startswith('/ai') or \
+       request.path.startswith('/usage') or request.path.startswith('/debug'):
+        return jsonify({"error": "Não autenticado. Faça login."}), 401
+    return redirect(url_for('login_page'))
+
+
+@app.route('/login', methods=['GET'])
+def login_page():
+    if session.get('authenticated'):
+        return redirect(url_for('home'))
+    return render_template('login.html')
+
+
+@app.route('/login', methods=['POST'])
+def login_post():
+    password = request.form.get('password', '').strip()
+    if password == ADMIN_PASSWORD:
+        session['authenticated'] = True
+        session.permanent = False
+        return redirect(url_for('home'))
+    return render_template('login.html', error='Senha incorreta.')
 
 # ===============================
 # Firebase / Firestore
@@ -100,7 +139,7 @@ def gh_headers():
 # ===============================
 # Escrita de projetos em disco
 # ===============================
-_default_output = str(pathlib.Path.home() / "Desktop" / "projetos-agente")
+_default_output = str(pathlib.Path.home() / "Desktop" / "projetos")
 PROJECTS_OUTPUT_DIR = os.getenv("PROJECTS_OUTPUT_DIR", _default_output)
 
 # Modelo de visão (usado quando o usuário envia uma imagem)
@@ -174,16 +213,17 @@ ARCHITECTURE_GUIDES = {
     "react": """Stack: React (JavaScript) with functional components and hooks.
 
 Architecture guidelines:
-- Use Create React App or Vite structure.
+- Use Vite structure (preferred) or Create React App.
 - Organize by feature/domain: components/, pages/, hooks/, services/, utils/, context/.
 - Use functional components with React hooks (useState, useEffect, useContext, useCallback, useMemo).
-- CSS Modules or styled-components for styling (prefer CSS Modules).
+- CSS Modules (.module.css) for styling.
 - Create a services/ folder for API calls using fetch or axios.
 - Use React Context API for simple global state.
-- File extensions: .js, .jsx for components, .css for styles.
+- File extensions: ALL components and files containing JSX must use .jsx extension. Pure JS utility files (no JSX) use .js. CSS files use .css.
+- Entry point: main.jsx (not main.js). App component: App.jsx.
 - Include a proper package.json with react, react-dom, react-router-dom.
-- Add ESLint and Prettier config files.
-- Create reusable components in components/ and page-level components in pages/.
+- Add ESLint config.
+- Create reusable components in components/ (*.jsx) and page-level components in pages/ (*.jsx).
 - Use React Router for navigation with a central routes config.
 - Add PropTypes for type checking.""",
 
@@ -197,7 +237,8 @@ Architecture guidelines:
 - CSS Modules (.module.css) or Tailwind CSS for styling.
 - Services layer in services/ using typed fetch/axios wrappers with generics.
 - React Context API with typed contexts and providers.
-- File extensions: .tsx for components, .ts for logic/types, .css for styles.
+- File extensions: ALL components and files containing JSX must use .tsx extension. Pure TypeScript files (no JSX) use .ts. CSS files use .css.
+- Entry point: main.tsx. App component: App.tsx.
 - Include tsconfig.json with strict mode enabled.
 - Include package.json with react, react-dom, react-router-dom, typescript, @types/react, @types/react-dom.
 - Use path aliases in tsconfig (e.g., @components/, @services/, @hooks/).
@@ -263,6 +304,7 @@ CODE QUALITY RULES — these are non-negotiable:
 - Security by default: parameterized queries, output escaping, no secrets in code, descriptive-but-safe error messages.
 - Include every required config file: package.json, tsconfig.json, requirements.txt, .env.example, .gitignore, etc.
 - "language" values: python, javascript, typescript, tsx, jsx, json, css, html, markdown, yaml, bash, text.
+- FILE EXTENSION RULE: React components → .jsx (JS) or .tsx (TS). Never .js for a file that contains JSX. Never .ts for a file that contains JSX.
 - "summary" must always be in Brazilian Portuguese."""
 
 CHAT_JSON_FORMAT = """
@@ -395,10 +437,23 @@ def build_vision_message(text: str, image_b64: str, image_mime: str = "image/jpe
 def call_ai(messages, max_retries=2, model: str | None = None):
     use_model = model or AI_MODEL
     for attempt in range(max_retries + 1):
-        response = client.chat.completions.create(
-            model=use_model,
-            messages=messages
-        )
+        try:
+            response = client.chat.completions.create(
+                model=use_model,
+                messages=messages
+            )
+        except openai.APIConnectionError as e:
+            url = os.getenv('LOCAL_AI_URL', 'não definido')
+            raise ValueError(f"Não foi possível conectar à API ({url}). Verifique LOCAL_AI_URL e LOCAL_AI_KEY no Render. Detalhe: {e.__cause__ or e}")
+        except openai.AuthenticationError:
+            raise ValueError("Chave de API inválida ou não definida. Verifique LOCAL_AI_KEY no painel do Render.")
+        except openai.RateLimitError as e:
+            raise ValueError(f"Limite de requisições atingido (rate limit): {e}")
+        except openai.APIStatusError as e:
+            raise ValueError(f"Erro da API [{e.status_code}]: {e.message}")
+        except Exception as e:
+            raise ValueError(f"Erro inesperado ao chamar a IA ({type(e).__name__}): {e}")
+
         content = response.choices[0].message.content
         usage = response.usage
         try:
@@ -493,7 +548,16 @@ def projects_collection():
 # ===============================
 @app.route('/')
 def home():
-    return render_template('index.html')
+    resp = app.make_response(render_template('index.html'))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login_page'))
 
 
 @app.route('/manifest.json')
@@ -576,8 +640,7 @@ def create_project():
         doc_ref = projects_collection().document()
         doc_ref.set(project_data)
 
-        is_mobile = data.get('mobile', False)
-        output_path = None if is_mobile else write_project_to_disk(project_name, parsed.get("files", {}))
+        output_path = write_project_to_disk(project_name, parsed.get("files", {}))
 
         now = datetime.utcnow().isoformat()
         messages_ref = doc_ref.collection("messages")
@@ -720,9 +783,8 @@ def chat_project(project_id):
             default_msg += f" Removido {len(deleted_files)} arquivo(s)."
         assistant_msg = parsed.get("summary") or default_msg
 
-        is_mobile = req_data.get('mobile', False)
         project_name_disk = project.get("project_name", "projeto")
-        output_path = None if is_mobile else update_files_on_disk(project_name_disk, updated_files, deleted_files)
+        output_path = update_files_on_disk(project_name_disk, updated_files, deleted_files)
 
         now = datetime.utcnow().isoformat()
         messages_ref = doc_ref.collection("messages")
@@ -1158,6 +1220,19 @@ def ai_info():
     else:
         provider_label = 'Ollama'
     return jsonify({"provider_label": provider_label, "model": AI_MODEL})
+
+
+@app.route('/debug/ai', methods=['GET'])
+def debug_ai():
+    key = os.getenv('LOCAL_AI_KEY', '')
+    return jsonify({
+        "AI_PROVIDER": AI_PROVIDER,
+        "LOCAL_AI_URL": os.getenv('LOCAL_AI_URL', 'NÃO DEFINIDO'),
+        "LOCAL_AI_MODEL": AI_MODEL,
+        "VISION_MODEL": VISION_MODEL,
+        "LOCAL_AI_KEY_set": bool(key and key != 'ollama'),
+        "LOCAL_AI_KEY_preview": (key[:8] + '...') if len(key) > 8 else ('NÃO DEFINIDO' if not key else key),
+    })
 
 
 # ===============================

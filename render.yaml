@@ -22,6 +22,8 @@ services:
         sync: false
       - key: FIREBASE_CREDENTIALS_JSON
         sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       # Deixe vazio no Render (sem disco para escrita de arquivos):
       - key: PROJECTS_OUTPUT_DIR
         value: ""

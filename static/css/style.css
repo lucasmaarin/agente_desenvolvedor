@@ -1500,6 +1500,20 @@ body {
 .ai-card-stat.green { color: var(--accent-green); }
 .ai-card-stat.blue  { color: var(--accent-blue); }
 
+.ai-card-zip-btn {
+    background: linear-gradient(135deg, #5dd62c, #337418);
+    border: none;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: opacity .15s;
+    margin-left: auto;
+}
+.ai-card-zip-btn:hover { opacity: .85; }
+
 /* =============== STACK BADGE (topbar) =============== */
 .stack-badge {
     font-size: 10px;
